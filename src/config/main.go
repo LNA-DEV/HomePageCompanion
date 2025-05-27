@@ -9,7 +9,7 @@ import (
 var Data config
 
 func LoadConfig() {
-	file, err := os.ReadFile("config.yaml")
+	file, err := os.ReadFile("data/config.yaml")
 	if err != nil {
 		panic(err)
 	}
