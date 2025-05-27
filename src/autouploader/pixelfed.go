@@ -80,7 +80,7 @@ func publishPixelfedPost(caption, mediaID string) error {
 }
 
 func publishPixelfedEntry(entry *gofeed.Item, platform string) error {
-	caption := "More at https://lna-dev.net/en/gallery\n\n"
+	caption := config.Data.Autouploader.Caption + "\n\n"
 	for _, tag := range entry.Categories {
 		caption += "#" + tag + " "
 	}
