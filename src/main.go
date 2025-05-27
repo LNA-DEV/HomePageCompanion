@@ -1,6 +1,7 @@
 package main
 
 import (
+	"log"
 	"net/http"
 
 	"github.com/LNA-DEV/HomePageCompanion/autouploader"
@@ -11,6 +12,8 @@ import (
 )
 
 func main() {
+	log.Print("Started companion")
+
 	// Config
 	config.LoadConfig()
 
@@ -23,6 +26,7 @@ func main() {
 
 	router.POST("/webmention", webmention.HandleWebmention)
 	router.POST("/upload/:platform", validateAPIKey(), uploadNext)
+	router.GET("/health", health)
 
 	router.Run(":8080")
 }
@@ -30,6 +34,11 @@ func main() {
 func uploadNext(c *gin.Context) {
 	platform := c.Param("platform")
 	autouploader.Publish(platform)
+}
+
+func health(c *gin.Context) {
+	jsonData := []byte(`{"msg":"this worked"}`)
+	c.Data(http.StatusOK, "application/json", jsonData)
 }
 
 func validateAPIKey() gin.HandlerFunc {

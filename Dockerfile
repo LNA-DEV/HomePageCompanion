@@ -15,4 +15,6 @@ WORKDIR /app
 
 COPY --from=build /app/home-page-companion .
 
+HEALTHCHECK CMD curl --fail http://localhost:8080/health || exit 1
+
 CMD ["./home-page-companion"]
