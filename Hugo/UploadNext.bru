@@ -1,0 +1,15 @@
+meta {
+  name: UploadNext
+  type: http
+  seq: 2
+}
+
+post {
+  url: http://localhost:8080/upload/:platform
+  body: none
+  auth: inherit
+}
+
+params:path {
+  platform: pixelfed
+}
