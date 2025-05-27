@@ -26,3 +26,5 @@ go.work.sum
 
 companion.db
 src/config.yaml
+
+__debug*

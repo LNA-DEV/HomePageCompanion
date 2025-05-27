@@ -1,4 +1,4 @@
-package main
+package webmention
 
 import (
 	"log"
@@ -6,13 +6,14 @@ import (
 	"net/url"
 	"time"
 
+	"github.com/LNA-DEV/HomePageCompanion/src/database"
 	"github.com/gin-gonic/gin"
 )
 
 type Webmention struct {
-	ID        uint      `gorm:"primaryKey"`
-	Source    string    `gorm:"not null"`
-	Target    string    `gorm:"not null"`
+	ID        uint   `gorm:"primaryKey"`
+	Source    string `gorm:"not null"`
+	Target    string `gorm:"not null"`
 	CreatedAt time.Time
 }
 
@@ -21,7 +22,7 @@ func isValidURL(str string) bool {
 	return err == nil && u.Scheme != "" && u.Host != ""
 }
 
-func handleWebmention(c *gin.Context) {
+func HandleWebmention(c *gin.Context) {
 	source := c.PostForm("source")
 	target := c.PostForm("target")
 
@@ -31,7 +32,7 @@ func handleWebmention(c *gin.Context) {
 	}
 
 	mention := Webmention{Source: source, Target: target, CreatedAt: time.Now()}
-	if err := db.Create(&mention).Error; err != nil {
+	if err := database.Db.Create(&mention).Error; err != nil {
 		log.Println("Error saving mention:", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to store webmention"})
 		return

@@ -1,36 +1,25 @@
 package main
 
 import (
-	"log"
-
 	"github.com/LNA-DEV/HomePageCompanion/src/autouploader"
 	"github.com/LNA-DEV/HomePageCompanion/src/config"
+	"github.com/LNA-DEV/HomePageCompanion/src/database"
+	"github.com/LNA-DEV/HomePageCompanion/src/webmention"
 	"github.com/gin-gonic/gin"
-	"gorm.io/driver/sqlite"
-	"gorm.io/gorm"
 )
-
-var db *gorm.DB
 
 func main() {
 	// Config
 	config.LoadConfig()
 
 	// Database
-	var err error
-	db, err = gorm.Open(sqlite.Open("companion.db"), &gorm.Config{})
-	if err != nil {
-		log.Fatal("Failed to connect to database:", err)
-	}
-
-	if err := db.AutoMigrate(&Webmention{}); err != nil {
-		log.Fatal("Migration failed:", err)
-	}
+	database.LoadDatabase()
+	database.MigrateModels([]interface{}{webmention.Webmention{}, autouploader.AutoUploadItem{}})
 
 	// Router config
 	router := gin.Default()
 
-	router.POST("/webmention", handleWebmention)
+	router.POST("/webmention", webmention.HandleWebmention)
 	router.POST("/upload/:platform", uploadNext)
 
 	router.Run(":8080")

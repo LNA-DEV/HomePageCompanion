@@ -1,17 +1,15 @@
 package autouploader
 
 import (
-	"encoding/json"
 	"fmt"
 	"log"
 	"math"
 	"math/rand"
-	"net/http"
-	"net/url"
 	"regexp"
 	"time"
 
 	"github.com/LNA-DEV/HomePageCompanion/src/config"
+	"github.com/LNA-DEV/HomePageCompanion/src/database"
 	"github.com/mmcdole/gofeed"
 )
 
@@ -88,30 +86,32 @@ func getEntryToPublish(platform string) *gofeed.Item {
 	return randomEntry
 }
 
-func getAlreadyUploadedItems(platform string) ([]string, error) {
-	resp, err := http.Get("https://api.lna-dev.net/autouploader/" + platform)
-	if err != nil || resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to fetch uploaded items, status code: %d", resp.StatusCode)
-	}
-	defer resp.Body.Close()
+type AutoUploadItem struct {
+	ID        uint   `gorm:"primaryKey"`
+	Platform  string `gorm:"index"`
+	ItemName  string `gorm:"index"`
+	CreatedAt time.Time
+}
 
-	var uploaded []string
-	if err := json.NewDecoder(resp.Body).Decode(&uploaded); err != nil {
+func getAlreadyUploadedItems(platform string) ([]string, error) {
+	var items []AutoUploadItem
+	if err := database.Db.Where("platform = ?", platform).Find(&items).Error; err != nil {
 		return nil, err
 	}
-	return uploaded, nil
+
+	var names []string
+	for _, item := range items {
+		names = append(names, item.ItemName)
+	}
+	return names, nil
 }
 
 func publishedEntry(entryName string, platform string) error {
-	urlStr := "https://api.lna-dev.net/autouploader/" + url.PathEscape(platform) + "?item=" + url.QueryEscape(entryName)
-
-	req, err := http.NewRequest("POST", urlStr, nil)
-	if err != nil {
-		return err
+	item := AutoUploadItem{
+		Platform: platform,
+		ItemName: entryName,
 	}
-	req.Header.Set("Authorization", "ApiKey " + config.Data.Security.ApiKey)
-	_, err = http.DefaultClient.Do(req)
-	return err
+	return database.Db.Create(&item).Error
 }
 
 func filterEntries(entries []*gofeed.Item, nameList []string) []*gofeed.Item {
