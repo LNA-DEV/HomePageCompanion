@@ -11,6 +11,7 @@ import (
 	"regexp"
 	"time"
 
+	"github.com/LNA-DEV/HomePageCompanion/src/config"
 	"github.com/mmcdole/gofeed"
 )
 
@@ -26,7 +27,7 @@ func Publish(platform string) {
 }
 
 func getEntryToPublish(platform string) *gofeed.Item {
-	feedURL := "https://lna-dev.net/en/gallery/index.xml"
+	feedURL := config.Data.Autouploader.FeedUrl
 	parser := gofeed.NewParser()
 	feed, err := parser.ParseURL(feedURL)
 	if err != nil {
@@ -108,7 +109,7 @@ func publishedEntry(entryName string, platform string) error {
 	if err != nil {
 		return err
 	}
-	req.Header.Set("Authorization", "ApiKey " + API_KEY)
+	req.Header.Set("Authorization", "ApiKey " + config.Data.Security.ApiKey)
 	_, err = http.DefaultClient.Do(req)
 	return err
 }

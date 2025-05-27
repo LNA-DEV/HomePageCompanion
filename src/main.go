@@ -4,6 +4,7 @@ import (
 	"log"
 
 	"github.com/LNA-DEV/HomePageCompanion/src/autouploader"
+	"github.com/LNA-DEV/HomePageCompanion/src/config"
 	"github.com/gin-gonic/gin"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
@@ -12,6 +13,9 @@ import (
 var db *gorm.DB
 
 func main() {
+	// Config
+	config.LoadConfig()
+
 	// Database
 	var err error
 	db, err = gorm.Open(sqlite.Open("companion.db"), &gorm.Config{})
@@ -28,7 +32,7 @@ func main() {
 
 	router.POST("/webmention", handleWebmention)
 	router.POST("/upload/:platform", uploadNext)
-	
+
 	router.Run(":8080")
 }
 

@@ -9,16 +9,10 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/url"
-	"os"
 	"strings"
 
+	"github.com/LNA-DEV/HomePageCompanion/src/config"
 	"github.com/mmcdole/gofeed"
-)
-
-var (
-	PIXELFED_INSTANCE_URL = "https://pixelfed.de"
-	PAT                   = os.Getenv("PIXELFED_PAT")
-	API_KEY               = os.Getenv("API_KEY")
 )
 
 func downloadImage(imageURL string) ([]byte, error) {
@@ -42,11 +36,11 @@ func uploadPixelfedMedia(entry *gofeed.Item) (string, error) {
 	body := &bytes.Buffer{}
 	writer := multipartWriter(body, imageData, description)
 
-	req, err := http.NewRequest("POST", PIXELFED_INSTANCE_URL+"/api/v1/media", body)
+	req, err := http.NewRequest("POST", config.Data.Autouploader.Pixelfed.InstanceUrl + "/api/v1/media", body)
 	if err != nil {
 		return "", err
 	}
-	req.Header.Set("Authorization", "Bearer "+PAT)
+	req.Header.Set("Authorization", "Bearer " + config.Data.Autouploader.Pixelfed.PAT)
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("Content-Type", writer.FormDataContentType())
 
@@ -70,11 +64,11 @@ func publishPixelfedPost(caption, mediaID string) error {
 	data.Set("status", caption)
 	data.Add("media_ids[]", mediaID)
 
-	req, err := http.NewRequest("POST", PIXELFED_INSTANCE_URL+"/api/v1/statuses", strings.NewReader(data.Encode()))
+	req, err := http.NewRequest("POST", config.Data.Autouploader.Pixelfed.InstanceUrl + "/api/v1/statuses", strings.NewReader(data.Encode()))
 	if err != nil {
 		return err
 	}
-	req.Header.Set("Authorization", "Bearer "+PAT)
+	req.Header.Set("Authorization", "Bearer " + config.Data.Autouploader.Pixelfed.PAT)
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
