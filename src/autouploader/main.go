@@ -8,8 +8,8 @@ import (
 	"regexp"
 	"time"
 
-	"github.com/LNA-DEV/HomePageCompanion/src/config"
-	"github.com/LNA-DEV/HomePageCompanion/src/database"
+	"github.com/LNA-DEV/HomePageCompanion/config"
+	"github.com/LNA-DEV/HomePageCompanion/database"
 	"github.com/mmcdole/gofeed"
 )
 

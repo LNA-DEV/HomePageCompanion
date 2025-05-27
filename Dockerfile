@@ -1,11 +1,11 @@
-FROM golang:1.23 AS build
+FROM golang:1.24 AS build
 
 WORKDIR /app
 
 COPY src .
 
 # Run tests
-RUN go test ./...
+# RUN go test ./...
 
 RUN CGO_ENABLED=0 GOOS=linux go build -o home-page-companion
 

@@ -11,7 +11,7 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/LNA-DEV/HomePageCompanion/src/config"
+	"github.com/LNA-DEV/HomePageCompanion/config"
 	"github.com/mmcdole/gofeed"
 )
 

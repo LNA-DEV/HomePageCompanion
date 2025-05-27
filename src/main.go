@@ -3,10 +3,10 @@ package main
 import (
 	"net/http"
 
-	"github.com/LNA-DEV/HomePageCompanion/src/autouploader"
-	"github.com/LNA-DEV/HomePageCompanion/src/config"
-	"github.com/LNA-DEV/HomePageCompanion/src/database"
-	"github.com/LNA-DEV/HomePageCompanion/src/webmention"
+	"github.com/LNA-DEV/HomePageCompanion/autouploader"
+	"github.com/LNA-DEV/HomePageCompanion/config"
+	"github.com/LNA-DEV/HomePageCompanion/database"
+	"github.com/LNA-DEV/HomePageCompanion/webmention"
 	"github.com/gin-gonic/gin"
 )
 

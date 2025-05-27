@@ -6,7 +6,7 @@ import (
 	"net/url"
 	"time"
 
-	"github.com/LNA-DEV/HomePageCompanion/src/database"
+	"github.com/LNA-DEV/HomePageCompanion/database"
 	"github.com/gin-gonic/gin"
 )
 
