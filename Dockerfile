@@ -7,7 +7,7 @@ COPY src .
 # Run tests
 # RUN go test ./...
 
-RUN CGO_ENABLED=0 GOOS=linux go build -o home-page-companion
+RUN CGO_ENABLED=1 GOOS=linux go build -o home-page-companion
 
 FROM alpine:latest AS run
 
