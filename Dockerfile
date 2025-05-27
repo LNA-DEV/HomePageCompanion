@@ -9,7 +9,7 @@ COPY src .
 
 RUN CGO_ENABLED=1 GOOS=linux go build -o home-page-companion
 
-FROM alpine:latest AS run
+FROM golang:1.24 AS run
 
 WORKDIR /app
 
