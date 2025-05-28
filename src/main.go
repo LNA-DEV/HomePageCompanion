@@ -8,6 +8,7 @@ import (
 	"github.com/LNA-DEV/HomePageCompanion/config"
 	"github.com/LNA-DEV/HomePageCompanion/database"
 	"github.com/LNA-DEV/HomePageCompanion/webmention"
+	"github.com/LNA-DEV/HomePageCompanion/webpush"
 	"github.com/gin-gonic/gin"
 	"github.com/robfig/cron"
 )
@@ -20,7 +21,10 @@ func main() {
 
 	// Database
 	database.LoadDatabase()
-	database.MigrateModels([]interface{}{webmention.Webmention{}, autouploader.AutoUploadItem{}})
+	database.MigrateModels([]interface{}{webmention.Webmention{}, autouploader.AutoUploadItem{}, webpush.VAPIDKey{}})
+
+	// Webpush
+	webpush.LoadVAPIDKeys()
 
 	// Cron setup
 	c := cron.New()
