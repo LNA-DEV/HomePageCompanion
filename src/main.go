@@ -9,6 +9,7 @@ import (
 	"github.com/LNA-DEV/HomePageCompanion/database"
 	"github.com/LNA-DEV/HomePageCompanion/webmention"
 	"github.com/gin-gonic/gin"
+	"github.com/robfig/cron"
 )
 
 func main() {
@@ -20,6 +21,19 @@ func main() {
 	// Database
 	database.LoadDatabase()
 	database.MigrateModels([]interface{}{webmention.Webmention{}, autouploader.AutoUploadItem{}})
+
+	// Cron setup
+	c := cron.New()
+	if config.Data.Autouploader.Pixelfed.Cron != nil {
+		c.AddFunc(*config.Data.Autouploader.Pixelfed.Cron, func() { autouploader.Publish("pixelfed") })
+	}
+	if config.Data.Autouploader.Bluesky.Cron != nil {
+		c.AddFunc(*config.Data.Autouploader.Bluesky.Cron, func() { autouploader.Publish("bluesky") })
+	}
+	if config.Data.Autouploader.Instagram.Cron != nil {
+		c.AddFunc(*config.Data.Autouploader.Instagram.Cron, func() { autouploader.Publish("instagram") })
+	}
+	c.Start()
 
 	// Router config
 	router := gin.Default()

@@ -30,19 +30,22 @@ type config struct {
 	Autouploader struct {
 		FeedUrl  string `yaml:"feedUrl"`
 		Pixelfed struct {
-			PAT         string `yaml:"pat"`
-			InstanceUrl string `yaml:"instance"`
-			Caption     string `yaml:"caption"`
+			PAT         string  `yaml:"pat"`
+			InstanceUrl string  `yaml:"instance"`
+			Caption     string  `yaml:"caption"`
+			Cron        *string `yaml:"cron"`
 		} `yaml:"pixelfed"`
 		Bluesky struct {
-			PAT      string `yaml:"pat"`
-			Username string `yaml:"username"`
-			Caption  string `yaml:"caption"`
+			PAT      string  `yaml:"pat"`
+			Username string  `yaml:"username"`
+			Caption  string  `yaml:"caption"`
+			Cron     *string `yaml:"cron"`
 		} `yaml:"bluesky"`
 		Instagram struct {
-			AccessToken string `yaml:"accessToken"`
-			AccountId   string `yaml:"accountId"`
-			Caption     string `yaml:"caption"`
+			AccessToken string  `yaml:"accessToken"`
+			AccountId   string  `yaml:"accountId"`
+			Caption     string  `yaml:"caption"`
+			Cron        *string `yaml:"cron"`
 		} `yaml:"instagram"`
 	} `yaml:"autouploader"`
 }
