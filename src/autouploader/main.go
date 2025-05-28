@@ -1,10 +1,13 @@
 package autouploader
 
 import (
+	"errors"
 	"fmt"
+	"io"
 	"log"
 	"math"
 	"math/rand"
+	"net/http"
 	"regexp"
 	"time"
 
@@ -21,6 +24,8 @@ func Publish(platform string) {
 		if err := publishPixelfedEntry(entry, platform); err != nil {
 			log.Fatalf("Failed to publish: %v", err)
 		}
+	case "instagram":
+		publishInstagramEntry(entry, platform)
 	}
 }
 
@@ -136,4 +141,13 @@ func extractAltText(html string) string {
 		return match[1]
 	}
 	return ""
+}
+
+func downloadImage(imageURL string) ([]byte, error) {
+	resp, err := http.Get(imageURL)
+	if err != nil || resp.StatusCode != 200 {
+		return nil, errors.New("failed to download image")
+	}
+	defer resp.Body.Close()
+	return io.ReadAll(resp.Body)
 }

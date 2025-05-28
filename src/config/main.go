@@ -29,10 +29,15 @@ type config struct {
 	} `yaml:"security"`
 	Autouploader struct {
 		FeedUrl  string `yaml:"feedUrl"`
-		Caption  string `yaml:"caption"`
 		Pixelfed struct {
 			PAT         string `yaml:"pat"`
 			InstanceUrl string `yaml:"instance"`
+			Caption     string `yaml:"caption"`
 		} `yaml:"pixelfed"`
+		Instagram struct {
+			AccessToken string `yaml:"accessToken"`
+			AccountId   string `yaml:"accountId"`
+			Caption     string `yaml:"caption"`
+		} `yaml:"instagram"`
 	} `yaml:"autouploader"`
 }

@@ -15,15 +15,6 @@ import (
 	"github.com/mmcdole/gofeed"
 )
 
-func downloadImage(imageURL string) ([]byte, error) {
-	resp, err := http.Get(imageURL)
-	if err != nil || resp.StatusCode != 200 {
-		return nil, errors.New("failed to download image")
-	}
-	defer resp.Body.Close()
-	return io.ReadAll(resp.Body)
-}
-
 func uploadPixelfedMedia(entry *gofeed.Item) (string, error) {
 	imageURL := entry.Image.URL
 	imageData, err := downloadImage(imageURL)
@@ -80,7 +71,7 @@ func publishPixelfedPost(caption, mediaID string) error {
 }
 
 func publishPixelfedEntry(entry *gofeed.Item, platform string) error {
-	caption := config.Data.Autouploader.Caption + "\n\n"
+	caption := config.Data.Autouploader.Pixelfed.Caption + "\n\n"
 	for _, tag := range entry.Categories {
 		caption += "#" + tag + " "
 	}
