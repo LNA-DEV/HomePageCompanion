@@ -34,6 +34,11 @@ type config struct {
 			InstanceUrl string `yaml:"instance"`
 			Caption     string `yaml:"caption"`
 		} `yaml:"pixelfed"`
+		Bluesky struct {
+			PAT      string `yaml:"pat"`
+			Username string `yaml:"username"`
+			Caption  string `yaml:"caption"`
+		} `yaml:"bluesky"`
 		Instagram struct {
 			AccessToken string `yaml:"accessToken"`
 			AccountId   string `yaml:"accountId"`

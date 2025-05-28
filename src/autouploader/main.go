@@ -24,9 +24,16 @@ func Publish(platform string) {
 		if err := publishPixelfedEntry(entry, platform); err != nil {
 			log.Fatalf("Failed to publish: %v", err)
 		}
+
 	case "instagram":
 		publishInstagramEntry(entry, platform)
+
+	case "bluesky":
+		if err := publishBlueskyEntry(entry, platform); err != nil {
+			log.Fatalf("Failed to publish: %v", err)
+		}
 	}
+
 }
 
 func getEntryToPublish(platform string) *gofeed.Item {
