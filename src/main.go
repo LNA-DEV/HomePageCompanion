@@ -33,6 +33,7 @@ func main() {
 	if config.Data.Autouploader.Instagram.Cron != nil {
 		c.AddFunc(*config.Data.Autouploader.Instagram.Cron, func() { autouploader.Publish("instagram") })
 	}
+	c.AddFunc("0 */5 * * * *", func() { config.LoadConfig() }) // Update config every 5min
 	c.Start()
 
 	// Router config
