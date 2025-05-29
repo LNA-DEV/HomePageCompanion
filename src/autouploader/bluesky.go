@@ -7,6 +7,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"regexp"
 	"strings"
 	"time"
 
@@ -55,7 +56,7 @@ func publishBlueskyEntry(entry *gofeed.Item, platform string) error {
 
 	// Build caption
 	var caption strings.Builder
-	caption.WriteString("More at https://lna-dev.net/en/gallery\n\n")
+	caption.WriteString(config.Data.Autouploader.Bluesky.Caption + "\n\n")
 
 	count := len(caption.String())
 	for _, tag := range entry.Categories {
@@ -65,6 +66,9 @@ func publishBlueskyEntry(entry *gofeed.Item, platform string) error {
 			count += len(tagText) + 1
 		}
 	}
+
+	text := caption.String()
+	facets := extractFacets(text)
 
 	mediaURL := entry.Image.URL
 
@@ -91,7 +95,8 @@ func publishBlueskyEntry(entry *gofeed.Item, platform string) error {
 		Collection: "app.bsky.feed.post",
 		Repo:       session.Did,
 	}
-	post.Record.Text = caption.String()
+	post.Record.Text = text
+	post.Record.Facets = toAnySlice(facets)
 	post.Record.Created = time.Now().Format(time.RFC3339)
 	post.Record.Type = "app.bsky.feed.post"
 	post.Record.Langs = []string{"en"}
@@ -138,6 +143,14 @@ func publishBlueskyEntry(entry *gofeed.Item, platform string) error {
 	return nil
 }
 
+func toAnySlice(maps []map[string]interface{}) []any {
+	result := make([]any, len(maps))
+	for i, m := range maps {
+		result[i] = m
+	}
+	return result
+}
+
 func blueskyLogin(username, password string) (*BlueskySession, error) {
 	payload := map[string]string{
 		"identifier": username,
@@ -177,4 +190,49 @@ func blueskyUploadImage(token string, image []byte, alt string) (*BlueskyImageBl
 		return nil, err
 	}
 	return &blob, nil
+}
+
+// Returns facets for hashtags and URLs
+func extractFacets(text string) []map[string]interface{} {
+	var facets []map[string]interface{}
+
+	// Hashtag pattern
+	hashtagPattern := regexp.MustCompile(`#\w+`)
+	for _, match := range hashtagPattern.FindAllStringIndex(text, -1) {
+		start, end := match[0], match[1]
+		tag := text[start+1 : end]
+		facets = append(facets, map[string]interface{}{
+			"index": map[string]int{
+				"byteStart": start,
+				"byteEnd":   end,
+			},
+			"features": []interface{}{
+				map[string]interface{}{
+					"$type": "app.bsky.richtext.facet#tag",
+					"tag":   tag,
+				},
+			},
+		})
+	}
+
+	// URL pattern
+	urlPattern := regexp.MustCompile(`https?://[^\s]+`)
+	for _, match := range urlPattern.FindAllStringIndex(text, -1) {
+		start, end := match[0], match[1]
+		url := text[start:end]
+		facets = append(facets, map[string]interface{}{
+			"index": map[string]int{
+				"byteStart": start,
+				"byteEnd":   end,
+			},
+			"features": []interface{}{
+				map[string]interface{}{
+					"$type": "app.bsky.richtext.facet#link",
+					"uri":   url,
+				},
+			},
+		})
+	}
+
+	return facets
 }
