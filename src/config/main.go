@@ -48,4 +48,7 @@ type config struct {
 			Cron        *string `yaml:"cron"`
 		} `yaml:"instagram"`
 	} `yaml:"autouploader"`
+	Webpush struct {
+		Subscriber string `yaml:"subscriberMail"`
+	} `yaml:"webpush"`
 }

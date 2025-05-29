@@ -2,30 +2,20 @@ package webpush
 
 import (
 	"fmt"
-	"time"
 	"log"
+	"time"
+
 	"gorm.io/gorm"
 
 	"github.com/LNA-DEV/HomePageCompanion/database"
+	"github.com/LNA-DEV/HomePageCompanion/models"
 	"github.com/SherClockHolmes/webpush-go"
 )
 
-type VAPIDKey struct {
-	ID         uint   `gorm:"primaryKey"`
-	PublicKey  string `gorm:"unique"`
-	PrivateKey string
-	CreatedAt  time.Time
-}
+var VapidKey models.VAPIDKey
 
-// TableName overrides the table name used by GORM
-func (VAPIDKey) TableName() string {
-	return "vapid_keys"
-}
-
-var VapidKey VAPIDKey
-
-func LoadVAPIDKeys() (error) {
-	var key VAPIDKey
+func LoadVAPIDKeys() error {
+	var key models.VAPIDKey
 
 	// Try to find the first saved key
 	if err := database.Db.First(&key).Error; err != nil {
@@ -37,7 +27,7 @@ func LoadVAPIDKeys() (error) {
 			}
 
 			// Save new keys
-			key = VAPIDKey{
+			key = models.VAPIDKey{
 				PublicKey:  publicKey,
 				PrivateKey: privateKey,
 				CreatedAt:  time.Now(),

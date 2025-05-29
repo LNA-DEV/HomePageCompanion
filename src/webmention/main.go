@@ -7,15 +7,9 @@ import (
 	"time"
 
 	"github.com/LNA-DEV/HomePageCompanion/database"
+	"github.com/LNA-DEV/HomePageCompanion/models"
 	"github.com/gin-gonic/gin"
 )
-
-type Webmention struct {
-	ID        uint   `gorm:"primaryKey"`
-	Source    string `gorm:"not null"`
-	Target    string `gorm:"not null"`
-	CreatedAt time.Time
-}
 
 func isValidURL(str string) bool {
 	u, err := url.ParseRequestURI(str)
@@ -31,7 +25,7 @@ func HandleWebmention(c *gin.Context) {
 		return
 	}
 
-	mention := Webmention{Source: source, Target: target, CreatedAt: time.Now()}
+	mention := models.Webmention{Source: source, Target: target, CreatedAt: time.Now()}
 	if err := database.Db.Create(&mention).Error; err != nil {
 		log.Println("Error saving mention:", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to store webmention"})

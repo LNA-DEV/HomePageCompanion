@@ -7,6 +7,7 @@ import (
 	"github.com/LNA-DEV/HomePageCompanion/autouploader"
 	"github.com/LNA-DEV/HomePageCompanion/config"
 	"github.com/LNA-DEV/HomePageCompanion/database"
+	"github.com/LNA-DEV/HomePageCompanion/models"
 	"github.com/LNA-DEV/HomePageCompanion/webmention"
 	"github.com/LNA-DEV/HomePageCompanion/webpush"
 	"github.com/gin-gonic/gin"
@@ -21,7 +22,7 @@ func main() {
 
 	// Database
 	database.LoadDatabase()
-	database.MigrateModels([]interface{}{webmention.Webmention{}, autouploader.AutoUploadItem{}, webpush.VAPIDKey{}})
+	database.MigrateModels([]interface{}{models.Webmention{}, models.AutoUploadItem{}, models.VAPIDKey{}, models.NotificationSubscription{}})
 
 	// Webpush
 	webpush.LoadVAPIDKeys()
@@ -43,11 +44,23 @@ func main() {
 	// Router config
 	router := gin.Default()
 
-	router.POST("/webmention", webmention.HandleWebmention)
-	router.POST("/upload/:platform", validateAPIKey(), uploadNext)
+	router.POST("/api/webmention", webmention.HandleWebmention)
+	router.POST("/api/upload/:platform", validateAPIKey(), uploadNext)
+	router.GET("/api/webpush/vapidkey", getVapidPublicKey)
+	router.POST("api/webpush/subscribe", webpush.SubscribeHandler())
+	router.POST("api/webpush/broadcast", validateAPIKey(), broadcast)
 	router.GET("/health", health)
 
 	router.Run(":8080")
+}
+
+func broadcast(c *gin.Context){
+	webpush.BroadcastNotification("test")
+}
+
+func getVapidPublicKey(c *gin.Context) {
+	jsonData := []byte(webpush.VapidKey.PublicKey)
+	c.Data(http.StatusOK, "application/text", jsonData)
 }
 
 func uploadNext(c *gin.Context) {

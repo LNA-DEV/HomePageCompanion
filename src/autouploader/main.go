@@ -13,6 +13,7 @@ import (
 
 	"github.com/LNA-DEV/HomePageCompanion/config"
 	"github.com/LNA-DEV/HomePageCompanion/database"
+	"github.com/LNA-DEV/HomePageCompanion/models"
 	"github.com/mmcdole/gofeed"
 )
 
@@ -98,15 +99,8 @@ func getEntryToPublish(platform string) *gofeed.Item {
 	return randomEntry
 }
 
-type AutoUploadItem struct {
-	ID        uint   `gorm:"primaryKey"`
-	Platform  string `gorm:"index"`
-	ItemName  string `gorm:"index"`
-	CreatedAt time.Time
-}
-
 func getAlreadyUploadedItems(platform string) ([]string, error) {
-	var items []AutoUploadItem
+	var items []models.AutoUploadItem
 	if err := database.Db.Where("platform = ?", platform).Find(&items).Error; err != nil {
 		return nil, err
 	}
@@ -119,7 +113,7 @@ func getAlreadyUploadedItems(platform string) ([]string, error) {
 }
 
 func publishedEntry(entryName string, platform string) error {
-	item := AutoUploadItem{
+	item := models.AutoUploadItem{
 		Platform: platform,
 		ItemName: entryName,
 	}
