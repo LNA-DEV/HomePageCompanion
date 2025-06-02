@@ -25,8 +25,8 @@ func main() {
 	database.LoadDatabase()
 	database.MigrateModels([]interface{}{models.Webmention{}, models.AutoUploadItem{}, models.VAPIDKey{}, models.NotificationSubscription{}, models.Feed{}, models.FeedItem{}, models.Author{}, models.Category{}})
 
-	// Populate feeds
-	inventory.ImageRssToDatabase(config.Data.Autouploader.FeedUrl)
+	// Inventory
+	inventory.PopulateDatabase()
 
 	// Webpush
 	webpush.LoadVAPIDKeys()
@@ -42,8 +42,8 @@ func main() {
 	if config.Data.Autouploader.Instagram.Cron != nil {
 		c.AddFunc(*config.Data.Autouploader.Instagram.Cron, func() { autouploader.Publish("instagram") })
 	}
-	c.AddFunc("0 */5 * * * *", func() { config.LoadConfig() })                                             // Update config every 5min
-	c.AddFunc("30 */5 * * * *", func() { inventory.ImageRssToDatabase(config.Data.Autouploader.FeedUrl) }) // Update feed every 5min
+	c.AddFunc("0 */5 * * * *", func() { config.LoadConfig() })
+	c.AddFunc("0 * */1 * * *", func() { inventory.PopulateDatabase() })
 	c.Start()
 
 	// Router config

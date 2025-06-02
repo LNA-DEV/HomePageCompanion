@@ -10,7 +10,7 @@ import (
 	"gorm.io/gorm"
 )
 
-func ImageRssToDatabase(feedURL string) {
+func imageRssToDatabase(feedURL string, feedName string) {
 	parser := gofeed.NewParser()
 	parsedFeed, err := parser.ParseURL(feedURL)
 	if err != nil {
@@ -26,6 +26,7 @@ func ImageRssToDatabase(feedURL string) {
 	}
 
 	feed := models.Feed{
+		FeedName:    feedName,
 		Title:       parsedFeed.Title,
 		Description: parsedFeed.Description,
 		Link:        parsedFeed.Link,

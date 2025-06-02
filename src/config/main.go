@@ -27,8 +27,14 @@ type config struct {
 	Security struct {
 		ApiKey string `yaml:"apiKey"`
 	} `yaml:"security"`
+	Datasources struct {
+		Rss []struct {
+			Name    string `yaml:"name"`
+			FeedURL string `yaml:"feedUrl"`
+			ItemType string `yaml:"itemType"`
+		} `yaml:"rss"`
+	} `yaml:"datasources"`
 	Autouploader struct {
-		FeedUrl  string `yaml:"feedUrl"`
 		Pixelfed struct {
 			PAT         string  `yaml:"pat"`
 			InstanceUrl string  `yaml:"instance"`

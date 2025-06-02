@@ -38,7 +38,7 @@ func Publish(platform string) {
 }
 
 func getEntryToPublish(platform string) *gofeed.Item {
-	feedURL := config.Data.Autouploader.FeedUrl
+	feedURL := config.Data.Datasources.Rss[0].FeedURL // TODO Change to database handling
 	parser := gofeed.NewParser()
 	feed, err := parser.ParseURL(feedURL)
 	if err != nil {

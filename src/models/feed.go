@@ -8,6 +8,7 @@ import (
 
 type Feed struct {
 	gorm.Model
+	FeedName       string
 	Title       string
 	Description string
 	Link        string
