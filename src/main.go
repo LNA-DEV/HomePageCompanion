@@ -7,6 +7,7 @@ import (
 	"github.com/LNA-DEV/HomePageCompanion/autouploader"
 	"github.com/LNA-DEV/HomePageCompanion/config"
 	"github.com/LNA-DEV/HomePageCompanion/database"
+	"github.com/LNA-DEV/HomePageCompanion/inventory"
 	"github.com/LNA-DEV/HomePageCompanion/models"
 	"github.com/LNA-DEV/HomePageCompanion/webmention"
 	"github.com/LNA-DEV/HomePageCompanion/webpush"
@@ -22,7 +23,10 @@ func main() {
 
 	// Database
 	database.LoadDatabase()
-	database.MigrateModels([]interface{}{models.Webmention{}, models.AutoUploadItem{}, models.VAPIDKey{}, models.NotificationSubscription{}})
+	database.MigrateModels([]interface{}{models.Webmention{}, models.AutoUploadItem{}, models.VAPIDKey{}, models.NotificationSubscription{}, models.Feed{}, models.FeedItem{}, models.Author{}, models.Category{}})
+
+	// Populate feeds
+	inventory.ImageRssToDatabase(config.Data.Autouploader.FeedUrl)
 
 	// Webpush
 	webpush.LoadVAPIDKeys()
@@ -38,7 +42,8 @@ func main() {
 	if config.Data.Autouploader.Instagram.Cron != nil {
 		c.AddFunc(*config.Data.Autouploader.Instagram.Cron, func() { autouploader.Publish("instagram") })
 	}
-	c.AddFunc("0 */5 * * * *", func() { config.LoadConfig() }) // Update config every 5min
+	c.AddFunc("0 */5 * * * *", func() { config.LoadConfig() })                                             // Update config every 5min
+	c.AddFunc("30 */5 * * * *", func() { inventory.ImageRssToDatabase(config.Data.Autouploader.FeedUrl) }) // Update feed every 5min
 	c.Start()
 
 	// Router config
@@ -54,7 +59,7 @@ func main() {
 	router.Run(":8080")
 }
 
-func broadcast(c *gin.Context){
+func broadcast(c *gin.Context) {
 	webpush.BroadcastNotification("test")
 }
 
