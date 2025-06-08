@@ -49,9 +49,9 @@ func publishBlueskyEntry(entry *gofeed.Item, platform string) error {
 	bskyPassword := config.Data.Autouploader.Bluesky.PAT
 
 	// Login to Bluesky
-	session, err := blueskyLogin(bskyUsername, bskyPassword)
-	if err != nil {
-		return err
+	session, httpErr := blueskyLogin(bskyUsername, bskyPassword)
+	if httpErr != nil {
+		return httpErr
 	}
 
 	// Build caption
@@ -79,15 +79,15 @@ func publishBlueskyEntry(entry *gofeed.Item, platform string) error {
 	}
 
 	// Download image
-	imageBytes, err := downloadImage(mediaURL)
-	if err != nil {
-		return err
+	imageBytes, httpErr := downloadImage(mediaURL)
+	if httpErr != nil {
+		return httpErr
 	}
 
 	// Upload image to Bluesky
-	blobRef, err := blueskyUploadImage(session.AccessJwt, imageBytes, altText)
-	if err != nil {
-		return err
+	blobRef, httpErr := blueskyUploadImage(session.AccessJwt, imageBytes, altText)
+	if httpErr != nil {
+		return httpErr
 	}
 
 	// Build post payload
@@ -122,8 +122,8 @@ func publishBlueskyEntry(entry *gofeed.Item, platform string) error {
 	req.Header.Set("Authorization", "Bearer "+session.AccessJwt)
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil || resp.StatusCode >= 300 {
+	resp, httpErr := http.DefaultClient.Do(req)
+	if httpErr != nil || resp.StatusCode >= 300 {
 		bodyBytes, err := io.ReadAll(resp.Body)
 		if err != nil {
 			return fmt.Errorf("failed to read response body: %w", err)
@@ -134,8 +134,27 @@ func publishBlueskyEntry(entry *gofeed.Item, platform string) error {
 	}
 	defer resp.Body.Close()
 
+	// Read the response body into bytes
+	bodyBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		fmt.Println("failed to read response body: %w", err)
+	}
+	defer resp.Body.Close()
+
+	bodyStr := string(bodyBytes)
+	fmt.Println("Bluesky raw response:", bodyStr)
+
+	var postResponse struct {
+		URI string `json:"uri"`
+		CID string `json:"cid"`
+	}
+
+	if err := json.Unmarshal(bodyBytes, &postResponse); err != nil {
+		fmt.Println("Bluesky response could not be decoded:", err)
+	}
+
 	// Mark as published
-	if err := publishedEntry(entry.Title, platform); err != nil {
+	if err := publishedEntry(entry.Title, platform, &postResponse.CID, &postResponse.URI); err != nil {
 		return err
 	}
 

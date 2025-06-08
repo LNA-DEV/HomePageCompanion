@@ -83,7 +83,7 @@ func publishPixelfedEntry(entry *gofeed.Item, platform string) error {
 	if err := publishPixelfedPost(caption, mediaID); err != nil {
 		return err
 	}
-	return publishedEntry(entry.Title, platform)
+	return publishedEntry(entry.Title, platform, nil, nil)
 }
 
 func multipartWriter(body *bytes.Buffer, image []byte, description string) *multipart.Writer {

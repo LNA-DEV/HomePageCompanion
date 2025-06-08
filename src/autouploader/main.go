@@ -112,10 +112,12 @@ func getAlreadyUploadedItems(platform string) ([]string, error) {
 	return names, nil
 }
 
-func publishedEntry(entryName string, platform string) error {
+func publishedEntry(entryName string, platform string, versionId *string, postUrl *string) error {
 	item := models.AutoUploadItem{
-		Platform: platform,
-		ItemName: entryName,
+		Platform:  platform,
+		ItemName:  entryName,
+		VersionId: versionId,
+		PostUrl:   postUrl,
 	}
 	return database.Db.Create(&item).Error
 }

@@ -8,7 +8,7 @@ import (
 
 type Feed struct {
 	gorm.Model
-	FeedName       string
+	FeedName    string
 	Title       string
 	Description string
 	Link        string
@@ -31,7 +31,7 @@ type FeedItem struct {
 	ImageUrl    string
 	Categories  []Category `gorm:"many2many:feed_item_categories"`
 	Published   time.Time
-	GUID        string `gorm:"uniqueIndex"`
+	GUID        string   `gorm:"uniqueIndex"`
 	Authors     []Author `gorm:"foreignKey:FeedItemID"`
 }
 
@@ -45,6 +45,6 @@ type Author struct {
 
 type Category struct {
 	gorm.Model
-	Name       string        `gorm:"uniqueIndex"`
-	FeedItems  []FeedItem    `gorm:"many2many:feed_item_categories"`
+	Name      string     `gorm:"uniqueIndex"`
+	FeedItems []FeedItem `gorm:"many2many:feed_item_categories"`
 }
