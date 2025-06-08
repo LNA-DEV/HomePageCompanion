@@ -8,5 +8,6 @@ type AutoUploadItem struct {
 	ItemName  string `gorm:"index"`
 	PostUrl   *string
 	VersionId *string
+	PostId    *string
 	CreatedAt time.Time
 }

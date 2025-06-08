@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"mime/multipart"
 	"net/http"
 	"net/url"
@@ -27,11 +28,11 @@ func uploadPixelfedMedia(entry *gofeed.Item) (string, error) {
 	body := &bytes.Buffer{}
 	writer := multipartWriter(body, imageData, description)
 
-	req, err := http.NewRequest("POST", config.Data.Autouploader.Pixelfed.InstanceUrl + "/api/v1/media", body)
+	req, err := http.NewRequest("POST", config.Data.Autouploader.Pixelfed.InstanceUrl+"/api/v1/media", body)
 	if err != nil {
 		return "", err
 	}
-	req.Header.Set("Authorization", "Bearer " + config.Data.Autouploader.Pixelfed.PAT)
+	req.Header.Set("Authorization", "Bearer "+config.Data.Autouploader.Pixelfed.PAT)
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("Content-Type", writer.FormDataContentType())
 
@@ -47,27 +48,55 @@ func uploadPixelfedMedia(entry *gofeed.Item) (string, error) {
 	return result["id"].(string), nil
 }
 
-func publishPixelfedPost(caption, mediaID string) error {
+type PixelfedResponse struct {
+	ID  string `json:"id"`
+	URL string `json:"url"`
+}
+
+func publishPixelfedPost(caption, mediaID string) (error, *PixelfedResponse) {
 	if strings.TrimSpace(caption) == "" {
-		return errors.New("caption cannot be empty")
+		return errors.New("caption cannot be empty"), nil
 	}
+
 	data := url.Values{}
 	data.Set("status", caption)
 	data.Add("media_ids[]", mediaID)
 
-	req, err := http.NewRequest("POST", config.Data.Autouploader.Pixelfed.InstanceUrl + "/api/v1/statuses", strings.NewReader(data.Encode()))
+	req, err := http.NewRequest("POST", config.Data.Autouploader.Pixelfed.InstanceUrl+"/api/v1/statuses", strings.NewReader(data.Encode()))
 	if err != nil {
-		return err
+		return err, nil
 	}
-	req.Header.Set("Authorization", "Bearer " + config.Data.Autouploader.Pixelfed.PAT)
+	req.Header.Set("Authorization", "Bearer "+config.Data.Autouploader.Pixelfed.PAT)
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
 	resp, err := http.DefaultClient.Do(req)
-	if err != nil || resp.StatusCode != 200 {
-		return errors.New("failed to publish post")
+	if err != nil {
+		return fmt.Errorf("failed to send request: %w", err), nil
 	}
-	return nil
+	defer resp.Body.Close()
+
+	// Handle HTTP errors
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("failed to publish post, status: %d, body: %s", resp.StatusCode, body), nil
+	}
+
+	// Read and parse response
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		fmt.Println("failed to read response: %w", err)
+	}
+
+	fmt.Println("Pixelfed raw response:", string(body))
+
+	var postResponse PixelfedResponse
+
+	if err := json.Unmarshal(body, &postResponse); err != nil {
+		fmt.Println("failed to parse Pixelfed response: %w", err)
+	}
+
+	return nil, &postResponse
 }
 
 func publishPixelfedEntry(entry *gofeed.Item, platform string) error {
@@ -80,10 +109,15 @@ func publishPixelfedEntry(entry *gofeed.Item, platform string) error {
 	if err != nil {
 		return err
 	}
-	if err := publishPixelfedPost(caption, mediaID); err != nil {
-		return err
+
+	err, response := publishPixelfedPost(caption, mediaID)
+	if err != nil {
+		return fmt.Errorf("failed to publish post: %w", err)
 	}
-	return publishedEntry(entry.Title, platform, nil, nil)
+
+	log.Println("Pixelfed post published:", response.URL)
+
+	return publishedEntry(entry.Title, platform, nil, &response.URL, &response.ID)
 }
 
 func multipartWriter(body *bytes.Buffer, image []byte, description string) *multipart.Writer {

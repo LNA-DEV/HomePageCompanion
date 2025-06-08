@@ -154,7 +154,7 @@ func publishBlueskyEntry(entry *gofeed.Item, platform string) error {
 	}
 
 	// Mark as published
-	if err := publishedEntry(entry.Title, platform, &postResponse.CID, &postResponse.URI); err != nil {
+	if err := publishedEntry(entry.Title, platform, &postResponse.CID, &postResponse.URI, nil); err != nil {
 		return err
 	}
 
