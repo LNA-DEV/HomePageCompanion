@@ -38,7 +38,7 @@ func postInstagramImage(caption, imageURL, accountID, accessToken string) (strin
 	return "", fmt.Errorf("failed to create media container: %v", res)
 }
 
-func publishInstagramContainer(creationID, accountID, accessToken string) (string, error) {
+func publishInstagramContainer(creationID, accountID, accessToken string) (*string, error) {
 	endpoint := fmt.Sprintf("%s%s/media_publish", graphURL, accountID)
 	params := url.Values{}
 	params.Set("access_token", accessToken)
@@ -46,19 +46,19 @@ func publishInstagramContainer(creationID, accountID, accessToken string) (strin
 
 	resp, err := http.PostForm(endpoint, params)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	defer resp.Body.Close()
 
 	var res map[string]interface{}
 	if err := json.NewDecoder(resp.Body).Decode(&res); err != nil {
-		return "", err
+		return nil, err
 	}
 
 	if id, ok := res["id"].(string); ok {
-		return id, nil
+		return &id, nil
 	}
-	return "", fmt.Errorf("failed to publish container: %v", res)
+	return nil, fmt.Errorf("failed to publish container: %v", res)
 }
 
 func checkInstagramMediaStatus(creationID, accessToken string) (string, error) {
@@ -131,8 +131,8 @@ func publishInstagramEntry(entry *gofeed.Item, platform string) {
 		return
 	}
 
-	log.Printf("Published to Instagram: %s\n", publishID)
-	if err := publishedEntry(entry.Title, platform, nil, nil, nil); err != nil {
+	log.Printf("Published to Instagram: %s\n", *publishID)
+	if err := publishedEntry(entry.Title, platform, nil, nil, publishID); err != nil {
 		log.Printf("Error recording published entry: %v\n", err)
 	}
 }
