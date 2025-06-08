@@ -17,35 +17,52 @@ import (
 	"github.com/mmcdole/gofeed"
 )
 
-func Publish(platform string) {
-	entry := getEntryToPublish(platform)
+func Publish(connection config.Connection) {
+	var source config.Datasource
 
-	switch platform {
+	for _, element := range config.Data.Datasources.Rss {
+		if element.Name == connection.SourceName {
+			source = element
+		}
+	}
+
+	var target config.Target
+
+	for _, element := range config.Data.Targets {
+		if element.Name == connection.TargetName {
+			target = element
+			break
+		}
+	}
+
+	entry := getEntryToPublish(source, target)
+
+	switch target.Platform {
 	case "pixelfed":
-		if err := publishPixelfedEntry(entry, platform); err != nil {
+		if err := publishPixelfedEntry(entry, target, connection); err != nil {
 			log.Fatalf("Failed to publish: %v", err)
 		}
 
 	case "instagram":
-		publishInstagramEntry(entry, platform)
+		publishInstagramEntry(entry, target, connection)
 
 	case "bluesky":
-		if err := publishBlueskyEntry(entry, platform); err != nil {
+		if err := publishBlueskyEntry(entry, target, connection); err != nil {
 			log.Fatalf("Failed to publish: %v", err)
 		}
 	}
 
 }
 
-func getEntryToPublish(platform string) *gofeed.Item {
-	feedURL := config.Data.Datasources.Rss[0].FeedURL // TODO Change to database handling
+func getEntryToPublish(source config.Datasource, target config.Target) *gofeed.Item {
+	feedURL := source.FeedURL
 	parser := gofeed.NewParser()
 	feed, err := parser.ParseURL(feedURL)
 	if err != nil {
 		log.Fatalf("Error parsing feed: %v", err)
 	}
 
-	specificNames, err := getAlreadyUploadedItems(platform)
+	specificNames, err := getAlreadyUploadedItems(target.Platform)
 	if err != nil {
 		log.Fatal(err)
 	}

@@ -33,15 +33,13 @@ func main() {
 
 	// Cron setup
 	c := cron.New()
-	if config.Data.Autouploader.Pixelfed.Cron != nil {
-		c.AddFunc(*config.Data.Autouploader.Pixelfed.Cron, func() { autouploader.Publish("pixelfed") })
+
+	for _, connection := range config.Data.Connections {
+		if connection.Cron != nil {
+			c.AddFunc(*connection.Cron, func() { autouploader.Publish(connection) })
+		}
 	}
-	if config.Data.Autouploader.Bluesky.Cron != nil {
-		c.AddFunc(*config.Data.Autouploader.Bluesky.Cron, func() { autouploader.Publish("bluesky") })
-	}
-	if config.Data.Autouploader.Instagram.Cron != nil {
-		c.AddFunc(*config.Data.Autouploader.Instagram.Cron, func() { autouploader.Publish("instagram") })
-	}
+
 	c.AddFunc("0 */5 * * * *", func() { config.LoadConfig() })
 	c.AddFunc("0 * */1 * * *", func() { inventory.PopulateDatabase() })
 	c.Start()
@@ -50,7 +48,7 @@ func main() {
 	router := gin.Default()
 
 	router.POST("/api/webmention", webmention.HandleWebmention)
-	router.POST("/api/upload/:platform", validateAPIKey(), uploadNext)
+	router.POST("/api/upload/:connectionName", validateAPIKey(), uploadNext)
 	router.GET("/api/webpush/vapidkey", getVapidPublicKey)
 	router.POST("api/webpush/subscribe", webpush.SubscribeHandler())
 	router.POST("api/webpush/broadcast", validateAPIKey(), broadcast)
@@ -69,8 +67,18 @@ func getVapidPublicKey(c *gin.Context) {
 }
 
 func uploadNext(c *gin.Context) {
-	platform := c.Param("platform")
-	autouploader.Publish(platform)
+	connectionName := c.Param("connectionName")
+
+	var connection config.Connection
+
+	for _, item := range config.Data.Connections {
+		if item.Name == connectionName {
+			connection = item
+			break
+		}
+	}
+
+	autouploader.Publish(connection)
 }
 
 func health(c *gin.Context) {

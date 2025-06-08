@@ -44,9 +44,9 @@ type BlueskyPostRequest struct {
 	} `json:"record"`
 }
 
-func publishBlueskyEntry(entry *gofeed.Item, platform string) error {
-	bskyUsername := config.Data.Autouploader.Bluesky.Username
-	bskyPassword := config.Data.Autouploader.Bluesky.PAT
+func publishBlueskyEntry(entry *gofeed.Item, target config.Target, connection config.Connection) error {
+	bskyUsername := target.Username
+	bskyPassword := target.PAT
 
 	// Login to Bluesky
 	session, httpErr := blueskyLogin(bskyUsername, bskyPassword)
@@ -56,7 +56,7 @@ func publishBlueskyEntry(entry *gofeed.Item, platform string) error {
 
 	// Build caption
 	var caption strings.Builder
-	caption.WriteString(config.Data.Autouploader.Bluesky.Caption + "\n\n")
+	caption.WriteString(connection.Caption + "\n\n")
 
 	count := len(caption.String())
 	for _, tag := range entry.Categories {
@@ -154,7 +154,7 @@ func publishBlueskyEntry(entry *gofeed.Item, platform string) error {
 	}
 
 	// Mark as published
-	if err := publishedEntry(entry.Title, platform, &postResponse.CID, &postResponse.URI, nil); err != nil {
+	if err := publishedEntry(entry.Title, target.Platform, &postResponse.CID, &postResponse.URI, nil); err != nil {
 		return err
 	}
 

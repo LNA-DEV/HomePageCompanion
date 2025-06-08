@@ -5,13 +5,13 @@ meta {
 }
 
 post {
-  url: http://localhost:8080/api/upload/:platform
+  url: http://localhost:8080/api/upload/:connectionName
   body: none
   auth: inherit
 }
 
 params:path {
-  platform: bluesky
+  connectionName: instagram
 }
 
 headers {

@@ -80,9 +80,9 @@ func checkInstagramMediaStatus(creationID, accessToken string) (string, error) {
 	return "", fmt.Errorf("status not found: %v", res)
 }
 
-func publishInstagramEntry(entry *gofeed.Item, platform string) {
+func publishInstagramEntry(entry *gofeed.Item, target config.Target, connection config.Connection) {
 	// Build caption
-	caption := config.Data.Autouploader.Instagram.Caption + "\n\n"
+	caption := connection.Caption + "\n\n"
 	for _, tag := range entry.Categories {
 		caption += "#" + tag + " "
 	}
@@ -96,7 +96,7 @@ func publishInstagramEntry(entry *gofeed.Item, platform string) {
 
 	fmt.Println("Posting to Instagram...")
 
-	creationID, err := postInstagramImage(caption, mediaURL, config.Data.Autouploader.Instagram.AccountId, config.Data.Autouploader.Instagram.AccessToken)
+	creationID, err := postInstagramImage(caption, mediaURL, target.AccountId, target.AccessToken)
 	if err != nil {
 		log.Printf("Error creating media container: %v\n", err)
 		return
@@ -106,7 +106,7 @@ func publishInstagramEntry(entry *gofeed.Item, platform string) {
 	maxRetries := 10
 	var status string
 	for i := 0; i < maxRetries; i++ {
-		status, err = checkInstagramMediaStatus(creationID, config.Data.Autouploader.Instagram.AccessToken)
+		status, err = checkInstagramMediaStatus(creationID, target.AccessToken)
 		if err != nil {
 			log.Printf("Status check failed (attempt %d): %v\n", i+1, err)
 			time.Sleep(2 * time.Second)
@@ -125,14 +125,14 @@ func publishInstagramEntry(entry *gofeed.Item, platform string) {
 		return
 	}
 
-	publishID, err := publishInstagramContainer(creationID, config.Data.Autouploader.Instagram.AccountId, config.Data.Autouploader.Instagram.AccessToken)
+	publishID, err := publishInstagramContainer(creationID, target.AccountId, target.AccessToken)
 	if err != nil {
 		log.Printf("Error publishing media: %v\n", err)
 		return
 	}
 
 	log.Printf("Published to Instagram: %s\n", *publishID)
-	if err := publishedEntry(entry.Title, platform, nil, nil, publishID); err != nil {
+	if err := publishedEntry(entry.Title, target.Platform, nil, nil, publishID); err != nil {
 		log.Printf("Error recording published entry: %v\n", err)
 	}
 }
