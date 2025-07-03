@@ -3,6 +3,8 @@ package main
 import (
 	"log"
 	"net/http"
+	"regexp"
+	"time"
 
 	"github.com/LNA-DEV/HomePageCompanion/autouploader"
 	"github.com/LNA-DEV/HomePageCompanion/config"
@@ -11,6 +13,7 @@ import (
 	"github.com/LNA-DEV/HomePageCompanion/models"
 	"github.com/LNA-DEV/HomePageCompanion/webmention"
 	"github.com/LNA-DEV/HomePageCompanion/webpush"
+	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 	"github.com/robfig/cron"
 )
@@ -47,11 +50,29 @@ func main() {
 	// Router config
 	router := gin.Default()
 
+	// Build regex pattern dynamically
+	subdomainRegex := regexp.MustCompile(`^https?://([a-z0-9-]+\.)*` + regexp.QuoteMeta(config.Data.Security.Domain) + `(:[0-9]+)?$`)
+	localhostRegex := regexp.MustCompile(`^https?://localhost(:[0-9]+)?$`)
+
+	config := cors.Config{
+		AllowOrigins: []string{}, // use AllowOriginFunc instead
+		AllowOriginFunc: func(origin string) bool {
+			return subdomainRegex.MatchString(origin) || localhostRegex.MatchString(origin)
+		},
+		AllowMethods:     []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
+		AllowHeaders:     []string{"Origin", "Authorization", "Content-Type"},
+		ExposeHeaders:    []string{"Content-Length"},
+		AllowCredentials: true,
+		MaxAge:           12 * time.Hour,
+	}
+
+	router.Use(cors.New(config))
+
 	router.POST("/api/webmention", webmention.HandleWebmention)
 	router.POST("/api/upload/:connectionName", validateAPIKey(), uploadNext)
 	router.GET("/api/webpush/vapidkey", getVapidPublicKey)
-	router.POST("api/webpush/subscribe", webpush.SubscribeHandler())
-	router.POST("api/webpush/broadcast", validateAPIKey(), broadcast)
+	router.POST("/api/webpush/subscribe", webpush.SubscribeHandler())
+	router.POST("/api/webpush/broadcast", validateAPIKey(), broadcast)
 	router.GET("/health", health)
 
 	router.Run(":8080")

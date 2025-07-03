@@ -3,6 +3,7 @@ package config
 type Config struct {
 	Security struct {
 		ApiKey string `yaml:"apiKey"`
+		Domain string `yaml:"domain"`
 	} `yaml:"security"`
 	Datasources struct {
 		Rss []Datasource `yaml:"rss"`
