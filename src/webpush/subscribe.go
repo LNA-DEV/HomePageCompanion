@@ -12,7 +12,6 @@ type SubscriptionRequest struct {
 	Endpoint       string           `json:"endpoint" binding:"required"`
 	ExpirationTime *int64           `json:"expirationTime"`
 	Keys           SubscriptionKeys `json:"keys" binding:"required"`
-	UserID         *string          `json:"userId"` // optional
 }
 
 type SubscriptionKeys struct {
@@ -34,7 +33,6 @@ func SubscribeHandler() gin.HandlerFunc {
 			ExpirationTime: req.ExpirationTime,
 			Auth:           req.Keys.Auth,
 			P256dh:         req.Keys.P256dh,
-			UserID:         req.UserID,
 		}
 
 		// Create or update (based on endpoint)

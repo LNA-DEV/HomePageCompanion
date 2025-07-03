@@ -58,7 +58,19 @@ func main() {
 }
 
 func broadcast(c *gin.Context) {
-	webpush.BroadcastNotification("test")
+	var notif models.Notification
+	if err := c.ShouldBindJSON(&notif); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid JSON"})
+		return
+	}
+
+	if notif.Title == "" || notif.Body == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Title and Body are required"})
+		return
+	}
+
+	webpush.BroadcastNotification(notif)
+	c.JSON(http.StatusOK, gin.H{"status": "Broadcast sent"})
 }
 
 func getVapidPublicKey(c *gin.Context) {

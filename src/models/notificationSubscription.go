@@ -8,5 +8,4 @@ type NotificationSubscription struct {
 	ExpirationTime *int64
 	Auth           string
 	P256dh         string
-	UserID         *string // Optional: associate with user
 }
