@@ -11,15 +11,10 @@ import (
 	"strings"
 	"time"
 
+	blueskyapi "github.com/LNA-DEV/HomePageCompanion/blue_sky_api"
 	"github.com/LNA-DEV/HomePageCompanion/config"
 	"github.com/mmcdole/gofeed"
 )
-
-type BlueskySession struct {
-	AccessJwt string `json:"accessJwt"`
-	Did       string `json:"did"`
-	Handle    string `json:"handle"`
-}
 
 type BlueskyImageBlob struct {
 	Blob struct {
@@ -49,7 +44,7 @@ func publishBlueskyEntry(entry *gofeed.Item, target config.Target, connection co
 	bskyPassword := target.PAT
 
 	// Login to Bluesky
-	session, httpErr := blueskyLogin(bskyUsername, bskyPassword)
+	session, httpErr := blueskyapi.BlueskyLogin(bskyUsername, bskyPassword)
 	if httpErr != nil {
 		return httpErr
 	}
@@ -168,29 +163,6 @@ func toAnySlice(maps []map[string]interface{}) []any {
 		result[i] = m
 	}
 	return result
-}
-
-func blueskyLogin(username, password string) (*BlueskySession, error) {
-	payload := map[string]string{
-		"identifier": username,
-		"password":   password,
-	}
-	data, _ := json.Marshal(payload)
-	resp, err := http.Post("https://bsky.social/xrpc/com.atproto.server.createSession", "application/json", bytes.NewBuffer(data))
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to authenticate, status code: %d", resp.StatusCode)
-	}
-
-	var session BlueskySession
-	if err := json.NewDecoder(resp.Body).Decode(&session); err != nil {
-		return nil, err
-	}
-	return &session, nil
 }
 
 func blueskyUploadImage(token string, image []byte, alt string) (*BlueskyImageBlob, error) {

@@ -15,6 +15,7 @@ import (
 	"github.com/LNA-DEV/HomePageCompanion/database"
 	"github.com/LNA-DEV/HomePageCompanion/models"
 	"github.com/mmcdole/gofeed"
+	"gorm.io/gorm"
 )
 
 func Publish(connection config.Connection) {
@@ -52,6 +53,20 @@ func Publish(connection config.Connection) {
 		}
 	}
 
+}
+
+func GetPublishedEntry(item_name string, platform string) (*models.AutoUploadItem, error) {
+	var item models.AutoUploadItem
+	if err := database.Db.
+		Where("item_name = ?", item_name).
+		Where("platform = ?", platform).
+		First(&item).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &item, nil
 }
 
 func getEntryToPublish(source config.Datasource, target config.Target) *gofeed.Item {

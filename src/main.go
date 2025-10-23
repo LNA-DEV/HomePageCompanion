@@ -9,6 +9,7 @@ import (
 	"github.com/LNA-DEV/HomePageCompanion/autouploader"
 	"github.com/LNA-DEV/HomePageCompanion/config"
 	"github.com/LNA-DEV/HomePageCompanion/database"
+	"github.com/LNA-DEV/HomePageCompanion/interactions"
 	"github.com/LNA-DEV/HomePageCompanion/inventory"
 	"github.com/LNA-DEV/HomePageCompanion/models"
 	"github.com/LNA-DEV/HomePageCompanion/webmention"
@@ -73,6 +74,7 @@ func main() {
 	router.GET("/api/webpush/vapidkey", getVapidPublicKey)
 	router.POST("/api/webpush/subscribe", webpush.SubscribeHandler())
 	router.POST("/api/webpush/broadcast", validateAPIKey(), broadcast)
+	router.GET("/api/interactions/post/:target_name/:item_name", interactions.HandleInteraction)
 	router.GET("/health", health)
 
 	router.Run(":8080")
