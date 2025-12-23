@@ -2,6 +2,7 @@ package interactions
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 
@@ -40,6 +41,10 @@ func GetBlueskyLikes(uri, cid string, targetName string) (*BlueskyLikesResponse,
 
 	session, loginErr := blueskyapi.BlueskyLogin(target.Username, target.PAT)
 	if loginErr != nil {
+		// Convert blueskyapi.ErrRateLimited to local ErrRateLimited for retry logic
+		if errors.Is(loginErr, blueskyapi.ErrRateLimited) {
+			return nil, ErrRateLimited
+		}
 		return nil, loginErr
 	}
 

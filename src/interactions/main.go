@@ -67,16 +67,8 @@ func FetchAndStoreInteractions() {
 		itemsByName[item.ItemName] = append(itemsByName[item.ItemName], item)
 	}
 
-	// Track rate-limited platforms to skip them
-	rateLimitedPlatforms := make(map[string]bool)
-
 	for itemName, platformItems := range itemsByName {
 		for _, item := range platformItems {
-			// Skip if this platform is rate limited
-			if rateLimitedPlatforms[item.Platform] {
-				continue
-			}
-
 			// Find the target for this platform
 			var target config.Target
 			for _, t := range config.Data.Targets {
@@ -92,10 +84,13 @@ func FetchAndStoreInteractions() {
 
 			var likeCount int
 			var fetchErr error
+			retryConfig := DefaultRetryConfig()
 
 			switch item.Platform {
 			case "bluesky":
-				result, e := handleBlueskyLikes(item, target.Name)
+				result, e := RetryWithBackoff(retryConfig, func() (*BlueskyLikesResponse, error) {
+					return handleBlueskyLikes(item, target.Name)
+				})
 				if e != nil {
 					fetchErr = e
 				} else {
@@ -103,7 +98,9 @@ func FetchAndStoreInteractions() {
 				}
 
 			case "pixelfed":
-				result, e := handlePixelfedLikes(item, target.Name)
+				result, e := RetryWithBackoff(retryConfig, func() (*PixelfedLikesResponse, error) {
+					return handlePixelfedLikes(item, target.Name)
+				})
 				if e != nil {
 					fetchErr = e
 				} else {
@@ -111,7 +108,9 @@ func FetchAndStoreInteractions() {
 				}
 
 			case "instagram":
-				result, e := handleInstagramLikes(item, target.Name)
+				result, e := RetryWithBackoff(retryConfig, func() (*InstagramLikesResponse, error) {
+					return handleInstagramLikes(item, target.Name)
+				})
 				if e != nil {
 					fetchErr = e
 				} else {
@@ -123,12 +122,7 @@ func FetchAndStoreInteractions() {
 			}
 
 			if fetchErr != nil {
-				if errors.Is(fetchErr, ErrRateLimited) {
-					log.Printf("Rate limited on %s, skipping remaining requests for this platform", item.Platform)
-					rateLimitedPlatforms[item.Platform] = true
-				} else {
-					log.Printf("Error fetching %s likes for %s: %v", item.Platform, itemName, fetchErr)
-				}
+				log.Printf("Error fetching %s likes for %s: %v", item.Platform, itemName, fetchErr)
 				continue
 			}
 

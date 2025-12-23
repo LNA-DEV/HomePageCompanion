@@ -4,9 +4,9 @@ import "time"
 
 type Interaction struct {
 	ID         uint   `gorm:"primaryKey"`
-	ItemName   string `gorm:"index"`
-	Platform   string `gorm:"index"`
-	TargetName string `gorm:"index"`
+	ItemName   string `gorm:"uniqueIndex:idx_item_platform_target"`
+	Platform   string `gorm:"uniqueIndex:idx_item_platform_target"`
+	TargetName string `gorm:"uniqueIndex:idx_item_platform_target"`
 	LikeCount  int
 	// Future fields for expansion
 	// CommentCount int

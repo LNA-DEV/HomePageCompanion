@@ -3,9 +3,12 @@ package blueskyapi
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 )
+
+var ErrRateLimited = errors.New("rate limited")
 
 func BlueskyLogin(username, password string) (*BlueskySession, error) {
 	payload := map[string]string{
@@ -18,6 +21,10 @@ func BlueskyLogin(username, password string) (*BlueskySession, error) {
 		return nil, err
 	}
 	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusTooManyRequests {
+		return nil, ErrRateLimited
+	}
 
 	if resp.StatusCode != 200 {
 		return nil, fmt.Errorf("failed to authenticate, status code: %d", resp.StatusCode)
