@@ -36,3 +36,5 @@ home-page-companion
 web/node_modules/
 web/build/
 web/.svelte-kit/
+
+.db-journal

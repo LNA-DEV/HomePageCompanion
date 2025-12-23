@@ -1,0 +1,15 @@
+meta {
+  name: Fetch Interactions
+  type: http
+  seq: 5
+}
+
+post {
+  url: {{BaseUrl}}/api/interactions/fetch
+  body: none
+  auth: inherit
+}
+
+headers {
+  Authorization: ApiKey {{ApiKey}}
+}

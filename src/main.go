@@ -83,6 +83,7 @@ func main() {
 		api.POST("/interactions/native/:item_name/like", interactions.HandleNativeLike)
 		api.DELETE("/interactions/native/:item_name/like", interactions.HandleNativeUnlike)
 		api.GET("/interactions/native/:item_name/status", interactions.HandleNativeLikeStatus)
+		api.POST("/interactions/fetch", validateAPIKey(), triggerInteractionsFetch)
 	}
 
 	// Admin API routes
@@ -133,6 +134,11 @@ func uploadNext(c *gin.Context) {
 func health(c *gin.Context) {
 	jsonData := []byte(`{"msg":"this worked"}`)
 	c.Data(http.StatusOK, "application/json", jsonData)
+}
+
+func triggerInteractionsFetch(c *gin.Context) {
+	interactions.FetchAndStoreInteractions()
+	c.JSON(http.StatusOK, gin.H{"status": "Interactions fetch triggered"})
 }
 
 func validateAPIKey() gin.HandlerFunc {
