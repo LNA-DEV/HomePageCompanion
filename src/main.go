@@ -6,6 +6,7 @@ import (
 	"regexp"
 	"time"
 
+	"github.com/LNA-DEV/HomePageCompanion/admin"
 	"github.com/LNA-DEV/HomePageCompanion/autouploader"
 	"github.com/LNA-DEV/HomePageCompanion/config"
 	"github.com/LNA-DEV/HomePageCompanion/database"
@@ -70,15 +71,24 @@ func main() {
 
 	router.Use(cors.New(config))
 
-	router.POST("/api/webmention", webmention.HandleWebmention)
-	router.POST("/api/upload/:connectionName", validateAPIKey(), uploadNext)
-	router.GET("/api/webpush/vapidkey", getVapidPublicKey)
-	router.POST("/api/webpush/subscribe", webpush.SubscribeHandler())
-	router.POST("/api/webpush/broadcast", validateAPIKey(), broadcast)
-	router.GET("/api/interactions/post/:target_name/:item_name", interactions.HandleInteraction)
-	router.POST("/api/interactions/native/:item_name/like", interactions.HandleNativeLike)
-	router.DELETE("/api/interactions/native/:item_name/like", interactions.HandleNativeUnlike)
-	router.GET("/api/interactions/native/:item_name/status", interactions.HandleNativeLikeStatus)
+	// API routes
+	api := router.Group("/api")
+	{
+		api.POST("/webmention", webmention.HandleWebmention)
+		api.POST("/upload/:connectionName", validateAPIKey(), uploadNext)
+		api.GET("/webpush/vapidkey", getVapidPublicKey)
+		api.POST("/webpush/subscribe", webpush.SubscribeHandler())
+		api.POST("/webpush/broadcast", validateAPIKey(), broadcast)
+		api.GET("/interactions/post/:target_name/:item_name", interactions.HandleInteraction)
+		api.POST("/interactions/native/:item_name/like", interactions.HandleNativeLike)
+		api.DELETE("/interactions/native/:item_name/like", interactions.HandleNativeUnlike)
+		api.GET("/interactions/native/:item_name/status", interactions.HandleNativeLikeStatus)
+	}
+
+	// Admin API routes
+	admin.RegisterRoutes(api, validateAPIKey())
+
+	// Health check
 	router.GET("/health", health)
 
 	router.Run(":8080")

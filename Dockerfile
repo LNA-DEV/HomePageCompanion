@@ -1,20 +1,21 @@
+# Build Go backend
 FROM golang:1.24 AS build
 
 WORKDIR /app
 
-COPY src .
-
-# Run tests
-# RUN go test ./...
+COPY src ./
 
 RUN CGO_ENABLED=1 GOOS=linux go build -o home-page-companion
 
-FROM golang:1.24 AS run
+# Runtime
+FROM debian:bookworm-slim AS run
+
+RUN apt-get update && apt-get install -y ca-certificates curl && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
 COPY --from=build /app/home-page-companion .
 
-HEALTHCHECK CMD curl --fail http://localhost:8080/health || exit 1
+EXPOSE 8080
 
 CMD ["./home-page-companion"]

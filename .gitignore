@@ -28,3 +28,11 @@ companion.db
 src/data/config.yaml
 
 __debug*
+
+# Built binary
+home-page-companion
+
+# Node.js / SvelteKit
+web/node_modules/
+web/build/
+web/.svelte-kit/
