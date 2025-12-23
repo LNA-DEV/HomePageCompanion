@@ -8,6 +8,7 @@ import (
 
 	"github.com/LNA-DEV/HomePageCompanion/admin"
 	"github.com/LNA-DEV/HomePageCompanion/autouploader"
+	"github.com/LNA-DEV/HomePageCompanion/backfill"
 	"github.com/LNA-DEV/HomePageCompanion/config"
 	"github.com/LNA-DEV/HomePageCompanion/database"
 	"github.com/LNA-DEV/HomePageCompanion/interactions"
@@ -84,6 +85,7 @@ func main() {
 		api.DELETE("/interactions/native/:item_name/like", interactions.HandleNativeUnlike)
 		api.GET("/interactions/native/:item_name/status", interactions.HandleNativeLikeStatus)
 		api.POST("/interactions/fetch", validateAPIKey(), triggerInteractionsFetch)
+		api.POST("/backfill", validateAPIKey(), triggerBackfill)
 	}
 
 	// Admin API routes
@@ -139,6 +141,11 @@ func health(c *gin.Context) {
 func triggerInteractionsFetch(c *gin.Context) {
 	interactions.FetchAndStoreInteractions()
 	c.JSON(http.StatusOK, gin.H{"status": "Interactions fetch triggered"})
+}
+
+func triggerBackfill(c *gin.Context) {
+	go backfill.RunBackfill()
+	c.JSON(http.StatusOK, gin.H{"status": "Backfill started"})
 }
 
 func validateAPIKey() gin.HandlerFunc {

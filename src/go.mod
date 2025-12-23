@@ -7,6 +7,7 @@ require github.com/gin-gonic/gin v1.10.1
 require (
 	github.com/PuerkitoBio/goquery v1.10.3 // indirect
 	github.com/andybalholm/cascadia v1.3.3 // indirect
+	github.com/corona10/goimagehash v1.1.0 // indirect
 	github.com/gin-contrib/cors v1.7.6 // indirect
 	github.com/golang-jwt/jwt/v5 v5.2.2 // indirect
 	github.com/jinzhu/inflection v1.0.0 // indirect
@@ -14,6 +15,7 @@ require (
 	github.com/knz/go-libedit v1.10.1 // indirect
 	github.com/mattn/go-sqlite3 v1.14.28 // indirect
 	github.com/mmcdole/goxpp v1.1.1 // indirect
+	github.com/nfnt/resize v0.0.0-20180221191011-83c6a9932646 // indirect
 )
 
 require (

@@ -149,14 +149,6 @@ func HandleNativeLikeStatus(c *gin.Context) {
 		}
 	}
 
-	// Also check if IP hash alone has liked (for cases where token was lost)
-	if !hasLiked {
-		var ipLike models.NativeLike
-		if database.Db.Where("item_name = ? AND ip_hash = ?", itemName, ipHash).First(&ipLike).Error == nil {
-			hasLiked = true
-		}
-	}
-
 	likeCount := getNativeLikeCount(itemName)
 	c.JSON(http.StatusOK, NativeLikeResponse{
 		Success:   true,

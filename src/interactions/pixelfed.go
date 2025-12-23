@@ -45,44 +45,60 @@ func handlePixelfedLikes(item models.AutoUploadItem, targetName string) (*Pixelf
 		return nil, errors.New("empty Pixelfed token")
 	}
 
-	endpoint := fmt.Sprintf("https://%s/api/v1/statuses/%s/favourited_by", instance, url.PathEscape(*item.PostId))
+	var allAccounts []PixelfedAccount
+	baseEndpoint := fmt.Sprintf("https://%s/api/v1/statuses/%s/favourited_by", instance, url.PathEscape(*item.PostId))
+	nextURL := baseEndpoint
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
+	for nextURL != "" {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
-	if err != nil {
-		return nil, err
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, nextURL, nil)
+		if err != nil {
+			cancel()
+			return nil, err
+		}
+		req.Header.Set("Authorization", "Bearer "+token)
+		req.Header.Set("Accept", "application/json")
+
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			cancel()
+			return nil, err
+		}
+
+		if resp.StatusCode == http.StatusTooManyRequests {
+			resp.Body.Close()
+			cancel()
+			return nil, ErrRateLimited
+		}
+
+		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+			resp.Body.Close()
+			cancel()
+			return nil, fmt.Errorf("pixelfed API %s -> %s", nextURL, resp.Status)
+		}
+
+		var accounts []PixelfedAccount
+		if err := json.NewDecoder(resp.Body).Decode(&accounts); err != nil {
+			resp.Body.Close()
+			cancel()
+			return nil, fmt.Errorf("decode response: %w", err)
+		}
+
+		allAccounts = append(allAccounts, accounts...)
+
+		// Parse Link header for pagination
+		nextURL = parseNextLink(resp.Header.Get("Link"))
+
+		resp.Body.Close()
+		cancel()
 	}
-	req.Header.Set("Authorization", "Bearer "+token)
-	req.Header.Set("Accept", "application/json")
 
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode == http.StatusTooManyRequests {
-		return nil, ErrRateLimited
-	}
-
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("pixelfed API %s -> %s", endpoint, resp.Status)
-	}
-
-	var accounts []PixelfedAccount
-	if err := json.NewDecoder(resp.Body).Decode(&accounts); err != nil {
-		return nil, fmt.Errorf("decode response: %w", err)
-	}
-
-	out := &PixelfedLikesResponse{
+	return &PixelfedLikesResponse{
 		Instance: instance,
 		PostID:   *item.PostId,
-		Accounts: accounts,
-	}
-
-	return out, nil
+		Accounts: allAccounts,
+	}, nil
 }
 
 func extractInstance(postURL string) (string, error) {
@@ -108,4 +124,26 @@ func getPixelfedToken(targetName string) string {
 	}
 
 	return target.PAT
+}
+
+// parseNextLink extracts the "next" URL from a Link header
+// Example: <https://example.com/api?max_id=123>; rel="next", <https://example.com/api?since_id=456>; rel="prev"
+func parseNextLink(linkHeader string) string {
+	if linkHeader == "" {
+		return ""
+	}
+
+	for _, part := range strings.Split(linkHeader, ",") {
+		part = strings.TrimSpace(part)
+		if strings.Contains(part, `rel="next"`) {
+			// Extract URL between < and >
+			start := strings.Index(part, "<")
+			end := strings.Index(part, ">")
+			if start != -1 && end != -1 && end > start {
+				return part[start+1 : end]
+			}
+		}
+	}
+
+	return ""
 }
