@@ -60,6 +60,10 @@ func GetBlueskyLikes(uri, cid string, targetName string) (*BlueskyLikesResponse,
 	}
 	defer resp.Body.Close()
 
+	if resp.StatusCode == http.StatusTooManyRequests {
+		return nil, ErrRateLimited
+	}
+
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("Bluesky API returned status %d", resp.StatusCode)
 	}

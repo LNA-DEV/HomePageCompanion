@@ -1,0 +1,22 @@
+meta {
+  name: Native Unlike
+  type: http
+  seq: 7
+}
+
+delete {
+  url: {{BaseUrl}}/api/interactions/native/DSC_2579.jpg/like
+  body: json
+  auth: inherit
+}
+
+body:json {
+  {
+    "token": "your-token-here"
+  }
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+}

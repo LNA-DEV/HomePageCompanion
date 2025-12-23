@@ -27,7 +27,7 @@ func main() {
 
 	// Database
 	database.LoadDatabase()
-	database.MigrateModels([]interface{}{models.Webmention{}, models.AutoUploadItem{}, models.VAPIDKey{}, models.NotificationSubscription{}, models.Feed{}, models.FeedItem{}, models.Author{}, models.Category{}})
+	database.MigrateModels([]interface{}{models.Webmention{}, models.AutoUploadItem{}, models.VAPIDKey{}, models.NotificationSubscription{}, models.Feed{}, models.FeedItem{}, models.Author{}, models.Category{}, models.Interaction{}, models.NativeLike{}})
 
 	// Inventory
 	inventory.PopulateDatabase()
@@ -46,6 +46,7 @@ func main() {
 
 	c.AddFunc("0 */5 * * * *", func() { config.LoadConfig() })
 	c.AddFunc("0 * */1 * * *", func() { inventory.PopulateDatabase() })
+	c.AddFunc("0 0 * * * *", func() { interactions.FetchAndStoreInteractions() })
 	c.Start()
 
 	// Router config
@@ -75,6 +76,9 @@ func main() {
 	router.POST("/api/webpush/subscribe", webpush.SubscribeHandler())
 	router.POST("/api/webpush/broadcast", validateAPIKey(), broadcast)
 	router.GET("/api/interactions/post/:target_name/:item_name", interactions.HandleInteraction)
+	router.POST("/api/interactions/native/:item_name/like", interactions.HandleNativeLike)
+	router.DELETE("/api/interactions/native/:item_name/like", interactions.HandleNativeUnlike)
+	router.GET("/api/interactions/native/:item_name/status", interactions.HandleNativeLikeStatus)
 	router.GET("/health", health)
 
 	router.Run(":8080")

@@ -30,7 +30,7 @@ type PixelfedLikesResponse struct {
 }
 
 func handlePixelfedLikes(item models.AutoUploadItem, targetName string) (*PixelfedLikesResponse, error) {
-	if *item.PostUrl == "" || *item.PostId == "" {
+	if item.PostUrl == nil || item.PostId == nil || *item.PostUrl == "" || *item.PostId == "" {
 		return nil, errors.New("missing PostURL or PostID")
 	}
 
@@ -62,6 +62,10 @@ func handlePixelfedLikes(item models.AutoUploadItem, targetName string) (*Pixelf
 		return nil, err
 	}
 	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusTooManyRequests {
+		return nil, ErrRateLimited
+	}
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return nil, fmt.Errorf("pixelfed API %s -> %s", endpoint, resp.Status)

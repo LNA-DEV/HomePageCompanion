@@ -1,0 +1,22 @@
+meta {
+  name: Native Like
+  type: http
+  seq: 6
+}
+
+post {
+  url: {{BaseUrl}}/api/interactions/native/DSC_2579.jpg/like
+  body: json
+  auth: inherit
+}
+
+body:json {
+  {
+    "token": ""
+  }
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+}
