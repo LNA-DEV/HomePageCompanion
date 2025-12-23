@@ -29,13 +29,6 @@ func handleBlueskyLikes(item models.AutoUploadItem, targetName string) (*Bluesky
 
 // GetBlueskyLikes retrieves like details for a given AT URI and version (CID)
 func GetBlueskyLikes(uri, cid string, targetName string) (*BlueskyLikesResponse, error) {
-	apiURL := fmt.Sprintf("https://bsky.social/xrpc/app.bsky.feed.getLikes?uri=%s&cid=%s", uri, cid)
-
-	req, err := http.NewRequest("GET", apiURL, nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
-	}
-
 	var target config.Target
 
 	for _, element := range config.Data.Targets {
@@ -50,30 +43,58 @@ func GetBlueskyLikes(uri, cid string, targetName string) (*BlueskyLikesResponse,
 		return nil, loginErr
 	}
 
-	req.Header.Set("Authorization", "Bearer "+session.AccessJwt)
-	req.Header.Set("Accept", "application/json")
-
 	client := &http.Client{}
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to call Bluesky API: %w", err)
-	}
-	defer resp.Body.Close()
+	var allLikes []BlueskyLike
+	var result *BlueskyLikesResponse
+	cursor := ""
 
-	if resp.StatusCode == http.StatusTooManyRequests {
-		return nil, ErrRateLimited
+	for {
+		apiURL := fmt.Sprintf("https://bsky.social/xrpc/app.bsky.feed.getLikes?uri=%s&cid=%s&limit=100", uri, cid)
+		if cursor != "" {
+			apiURL += "&cursor=" + cursor
+		}
+
+		req, err := http.NewRequest("GET", apiURL, nil)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create request: %w", err)
+		}
+
+		req.Header.Set("Authorization", "Bearer "+session.AccessJwt)
+		req.Header.Set("Accept", "application/json")
+
+		resp, err := client.Do(req)
+		if err != nil {
+			return nil, fmt.Errorf("failed to call Bluesky API: %w", err)
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode == http.StatusTooManyRequests {
+			return nil, ErrRateLimited
+		}
+
+		if resp.StatusCode != http.StatusOK {
+			return nil, fmt.Errorf("Bluesky API returned status %d", resp.StatusCode)
+		}
+
+		var data BlueskyLikesResponse
+		if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
+			return nil, fmt.Errorf("failed to parse JSON: %w", err)
+		}
+
+		allLikes = append(allLikes, data.Likes...)
+
+		if result == nil {
+			result = &data
+		}
+
+		if data.Cursor == "" {
+			break
+		}
+		cursor = data.Cursor
 	}
 
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("Bluesky API returned status %d", resp.StatusCode)
-	}
-
-	var data BlueskyLikesResponse
-	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
-		return nil, fmt.Errorf("failed to parse JSON: %w", err)
-	}
-
-	return &data, nil
+	result.Likes = allLikes
+	return result, nil
 }
 
 // BlueskyLike represents a single like entry
@@ -88,7 +109,8 @@ type BlueskyLike struct {
 
 // BlueskyLikesResponse represents the response from app.bsky.feed.getLikes
 type BlueskyLikesResponse struct {
-	Uri   string        `json:"uri"`
-	Cid   string        `json:"cid"`
-	Likes []BlueskyLike `json:"likes"`
+	Uri    string        `json:"uri"`
+	Cid    string        `json:"cid"`
+	Likes  []BlueskyLike `json:"likes"`
+	Cursor string        `json:"cursor,omitempty"`
 }
