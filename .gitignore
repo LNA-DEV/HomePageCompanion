@@ -37,4 +37,7 @@ web/node_modules/
 web/build/
 web/.svelte-kit/
 
-.db-journal
+# SQLite temporary files
+*.db-journal
+*.db-wal
+*.db-shm
