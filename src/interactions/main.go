@@ -16,16 +16,16 @@ var ErrRateLimited = errors.New("rate limited")
 
 // HandleInteraction retrieves interactions from the database for a given item
 func HandleInteraction(c *gin.Context) {
-	itemName := c.Param("item_name")
+	itemID := c.Param("item_id")
 	targetName := c.Param("target_name")
 
 	var interactions []models.Interaction
 	var err error
 
 	if targetName == "all" {
-		err = database.Db.Where("item_name = ?", itemName).Find(&interactions).Error
+		err = database.Db.Where("item_id = ?", itemID).Find(&interactions).Error
 	} else {
-		err = database.Db.Where("item_name = ? AND target_name = ?", itemName, targetName).Find(&interactions).Error
+		err = database.Db.Where("item_id = ? AND target_name = ?", itemID, targetName).Find(&interactions).Error
 	}
 
 	if err != nil {
@@ -61,13 +61,13 @@ func FetchAndStoreInteractions() {
 		return
 	}
 
-	// Group items by item name to process each item once per platform
-	itemsByName := make(map[string][]models.AutoUploadItem)
+	// Group items by item ID to process each item once per platform
+	itemsByID := make(map[string][]models.AutoUploadItem)
 	for _, item := range items {
-		itemsByName[item.ItemName] = append(itemsByName[item.ItemName], item)
+		itemsByID[item.ItemID] = append(itemsByID[item.ItemID], item)
 	}
 
-	for itemName, platformItems := range itemsByName {
+	for itemID, platformItems := range itemsByID {
 		for _, item := range platformItems {
 			// Find the target for this platform
 			var target config.Target
@@ -122,34 +122,34 @@ func FetchAndStoreInteractions() {
 			}
 
 			if fetchErr != nil {
-				log.Printf("Error fetching %s likes for %s: %v", item.Platform, itemName, fetchErr)
+				log.Printf("Error fetching %s likes for %s: %v", item.Platform, itemID, fetchErr)
 				continue
 			}
 
 			// Upsert interaction
 			var interaction models.Interaction
-			result := database.Db.Where("item_name = ? AND platform = ? AND target_name = ?", itemName, item.Platform, target.Name).First(&interaction)
+			result := database.Db.Where("item_id = ? AND platform = ? AND target_name = ?", itemID, item.Platform, target.Name).First(&interaction)
 
 			if result.Error != nil {
 				// Create new
 				interaction = models.Interaction{
-					ItemName:   itemName,
+					ItemID:     itemID,
 					Platform:   item.Platform,
 					TargetName: target.Name,
 					LikeCount:  likeCount,
 				}
 				if err := database.Db.Create(&interaction).Error; err != nil {
-					log.Printf("Error creating interaction for %s on %s: %v", itemName, item.Platform, err)
+					log.Printf("Error creating interaction for %s on %s: %v", itemID, item.Platform, err)
 				}
 			} else {
 				// Update existing
 				interaction.LikeCount = likeCount
 				if err := database.Db.Save(&interaction).Error; err != nil {
-					log.Printf("Error updating interaction for %s on %s: %v", itemName, item.Platform, err)
+					log.Printf("Error updating interaction for %s on %s: %v", itemID, item.Platform, err)
 				}
 			}
 
-			log.Printf("Stored interaction for %s on %s: %d likes", itemName, item.Platform, likeCount)
+			log.Printf("Stored interaction for %s on %s: %d likes", itemID, item.Platform, likeCount)
 		}
 	}
 

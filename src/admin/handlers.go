@@ -228,14 +228,14 @@ func GetInteractions(c *gin.Context) {
 
 	// Optional filtering
 	platform := c.Query("platform")
-	itemName := c.Query("itemName")
+	itemID := c.Query("itemId")
 
 	query := database.Db.Model(&models.Interaction{})
 	if platform != "" {
 		query = query.Where("platform = ?", platform)
 	}
-	if itemName != "" {
-		query = query.Where("item_name = ?", itemName)
+	if itemID != "" {
+		query = query.Where("item_id = ?", itemID)
 	}
 
 	query.Order("updated_at DESC").Find(&interactions)
@@ -252,7 +252,7 @@ type InteractionSummary struct {
 
 // ItemLikes represents likes for a specific item
 type ItemLikes struct {
-	ItemName   string `json:"itemName"`
+	ItemID     string `json:"itemId"`
 	TotalLikes int64  `json:"totalLikes"`
 }
 
@@ -284,8 +284,8 @@ func GetInteractionsSummary(c *gin.Context) {
 
 	// Top 10 items by total likes
 	database.Db.Model(&models.Interaction{}).
-		Select("item_name, COALESCE(SUM(like_count), 0) as total_likes").
-		Group("item_name").
+		Select("item_id, COALESCE(SUM(like_count), 0) as total_likes").
+		Group("item_id").
 		Order("total_likes DESC").
 		Limit(10).
 		Scan(&summary.TopItems)

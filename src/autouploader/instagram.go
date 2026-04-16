@@ -132,7 +132,7 @@ func publishInstagramEntry(entry *gofeed.Item, target config.Target, connection 
 	}
 
 	log.Printf("Published to Instagram: %s\n", *publishID)
-	if err := publishedEntry(entry.Title, target.Platform, nil, nil, publishID); err != nil {
+	if err := publishedEntry(entry.GUID, target.Platform, nil, nil, publishID); err != nil {
 		log.Printf("Error recording published entry: %v\n", err)
 	}
 }

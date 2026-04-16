@@ -25,7 +25,7 @@ import (
 const hashDistanceThreshold = 10
 
 type RSSImageData struct {
-	ItemName string
+	ItemID string
 	ImageURL string
 	Hash     *goimagehash.ImageHash
 }
@@ -109,7 +109,7 @@ func loadRSSImageHashes(feedURL string) ([]RSSImageData, error) {
 		}
 
 		imageData = append(imageData, RSSImageData{
-			ItemName: item.Title,
+			ItemID: item.GUID,
 			ImageURL: item.Image.URL,
 			Hash:     hash,
 		})
@@ -179,7 +179,7 @@ func findMatchingRSSItem(platformHash *goimagehash.ImageHash, rssImages []RSSIma
 func updateAutoUploadItem(itemName, platform string, postURL, versionID, postID *string) error {
 	return database.Db.
 		Model(&models.AutoUploadItem{}).
-		Where("item_name = ? AND platform = ?", itemName, platform).
+		Where("item_id = ? AND platform = ?", itemName, platform).
 		Updates(map[string]interface{}{
 			"post_url":   postURL,
 			"version_id": versionID,
@@ -218,14 +218,14 @@ func backfillPixelfed(target config.Target, source config.Datasource) {
 	}
 
 	// Filter RSS images to only those in our items list
-	itemNames := make(map[string]bool)
+	itemIDs := make(map[string]bool)
 	for _, item := range items {
-		itemNames[item.ItemName] = true
+		itemIDs[item.ItemID] = true
 	}
 
 	var relevantRSSImages []RSSImageData
 	for _, rss := range rssImages {
-		if itemNames[rss.ItemName] {
+		if itemIDs[rss.ItemID] {
 			relevantRSSImages = append(relevantRSSImages, rss)
 		}
 	}
@@ -266,8 +266,8 @@ func backfillPixelfed(target config.Target, source config.Datasource) {
 
 		match := findMatchingRSSItem(platformHash, relevantRSSImages)
 		if match != nil {
-			log.Printf("Matched Pixelfed post %s to RSS item %s", status.ID, match.ItemName)
-			err = updateAutoUploadItem(match.ItemName, "pixelfed", &status.URL, nil, &status.ID)
+			log.Printf("Matched Pixelfed post %s to RSS item %s", status.ID, match.ItemID)
+			err = updateAutoUploadItem(match.ItemID, "pixelfed", &status.URL, nil, &status.ID)
 			if err != nil {
 				log.Printf("Error updating item: %v", err)
 			}
@@ -387,14 +387,14 @@ func backfillBluesky(target config.Target, source config.Datasource) {
 	}
 
 	// Filter RSS images to only those in our items list
-	itemNames := make(map[string]bool)
+	itemIDs := make(map[string]bool)
 	for _, item := range items {
-		itemNames[item.ItemName] = true
+		itemIDs[item.ItemID] = true
 	}
 
 	var relevantRSSImages []RSSImageData
 	for _, rss := range rssImages {
-		if itemNames[rss.ItemName] {
+		if itemIDs[rss.ItemID] {
 			relevantRSSImages = append(relevantRSSImages, rss)
 		}
 	}
@@ -440,8 +440,8 @@ func backfillBluesky(target config.Target, source config.Datasource) {
 
 		match := findMatchingRSSItem(platformHash, relevantRSSImages)
 		if match != nil {
-			log.Printf("Matched Bluesky post %s to RSS item %s", post.URI, match.ItemName)
-			err = updateAutoUploadItem(match.ItemName, "bluesky", &post.URI, &post.CID, nil)
+			log.Printf("Matched Bluesky post %s to RSS item %s", post.URI, match.ItemID)
+			err = updateAutoUploadItem(match.ItemID, "bluesky", &post.URI, &post.CID, nil)
 			if err != nil {
 				log.Printf("Error updating item: %v", err)
 			}
@@ -523,14 +523,14 @@ func backfillInstagram(target config.Target, source config.Datasource) {
 	}
 
 	// Filter RSS images to only those in our items list
-	itemNames := make(map[string]bool)
+	itemIDs := make(map[string]bool)
 	for _, item := range items {
-		itemNames[item.ItemName] = true
+		itemIDs[item.ItemID] = true
 	}
 
 	var relevantRSSImages []RSSImageData
 	for _, rss := range rssImages {
-		if itemNames[rss.ItemName] {
+		if itemIDs[rss.ItemID] {
 			relevantRSSImages = append(relevantRSSImages, rss)
 		}
 	}
@@ -563,8 +563,8 @@ func backfillInstagram(target config.Target, source config.Datasource) {
 
 		match := findMatchingRSSItem(platformHash, relevantRSSImages)
 		if match != nil {
-			log.Printf("Matched Instagram post %s to RSS item %s", m.ID, match.ItemName)
-			err = updateAutoUploadItem(match.ItemName, "instagram", nil, nil, &m.ID)
+			log.Printf("Matched Instagram post %s to RSS item %s", m.ID, match.ItemID)
+			err = updateAutoUploadItem(match.ItemID, "instagram", nil, nil, &m.ID)
 			if err != nil {
 				log.Printf("Error updating item: %v", err)
 			}

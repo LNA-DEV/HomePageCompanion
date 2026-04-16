@@ -55,10 +55,10 @@ func Publish(connection config.Connection) {
 
 }
 
-func GetPublishedEntry(item_name string, platform string) (*models.AutoUploadItem, error) {
+func GetPublishedEntry(itemID string, platform string) (*models.AutoUploadItem, error) {
 	var item models.AutoUploadItem
 	if err := database.Db.
-		Where("item_name = ?", item_name).
+		Where("item_id = ?", itemID).
 		Where("platform = ?", platform).
 		First(&item).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -139,7 +139,7 @@ func getAlreadyUploadedItems(platform string) ([]string, error) {
 
 	var names []string
 	for _, item := range items {
-		names = append(names, item.ItemName)
+		names = append(names, item.ItemID)
 	}
 	return names, nil
 }
@@ -147,7 +147,7 @@ func getAlreadyUploadedItems(platform string) ([]string, error) {
 func publishedEntry(entryName string, platform string, versionId *string, postUrl *string, postId *string) error {
 	item := models.AutoUploadItem{
 		Platform:  platform,
-		ItemName:  entryName,
+		ItemID:    entryName,
 		VersionId: versionId,
 		PostUrl:   postUrl,
 		PostId:    postId,
@@ -163,7 +163,7 @@ func filterEntries(entries []*gofeed.Item, nameList []string) []*gofeed.Item {
 
 	var filtered []*gofeed.Item
 	for _, entry := range entries {
-		if !nameMap[entry.Title] {
+		if !nameMap[entry.GUID] {
 			filtered = append(filtered, entry)
 		}
 	}

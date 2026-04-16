@@ -29,6 +29,9 @@ func main() {
 
 	// Database
 	database.LoadDatabase()
+	// Data migrations (must run before schema AutoMigrate so column renames are applied first)
+	database.RunMigrations()
+
 	database.MigrateModels([]interface{}{models.Webmention{}, models.AutoUploadItem{}, models.VAPIDKey{}, models.NotificationSubscription{}, models.Feed{}, models.FeedItem{}, models.Author{}, models.Category{}, models.Interaction{}, models.NativeLike{}})
 
 	// Inventory
@@ -80,10 +83,10 @@ func main() {
 		api.GET("/webpush/vapidkey", getVapidPublicKey)
 		api.POST("/webpush/subscribe", webpush.SubscribeHandler())
 		api.POST("/webpush/broadcast", validateAPIKey(), broadcast)
-		api.GET("/interactions/post/:target_name/:item_name", interactions.HandleInteraction)
-		api.POST("/interactions/native/:item_name/like", interactions.HandleNativeLike)
-		api.DELETE("/interactions/native/:item_name/like", interactions.HandleNativeUnlike)
-		api.GET("/interactions/native/:item_name/status", interactions.HandleNativeLikeStatus)
+		api.GET("/interactions/post/:target_name/:item_id", interactions.HandleInteraction)
+		api.POST("/interactions/native/:item_id/like", interactions.HandleNativeLike)
+		api.DELETE("/interactions/native/:item_id/like", interactions.HandleNativeUnlike)
+		api.GET("/interactions/native/:item_id/status", interactions.HandleNativeLikeStatus)
 		api.POST("/interactions/fetch", validateAPIKey(), triggerInteractionsFetch)
 		api.POST("/backfill", validateAPIKey(), triggerBackfill)
 	}

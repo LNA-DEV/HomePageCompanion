@@ -4,7 +4,7 @@ import "time"
 
 type Interaction struct {
 	ID         uint   `gorm:"primaryKey"`
-	ItemName   string `gorm:"uniqueIndex:idx_item_platform_target"`
+	ItemID     string `gorm:"column:item_id;uniqueIndex:idx_item_platform_target"`
 	Platform   string `gorm:"uniqueIndex:idx_item_platform_target"`
 	TargetName string `gorm:"uniqueIndex:idx_item_platform_target"`
 	LikeCount  int

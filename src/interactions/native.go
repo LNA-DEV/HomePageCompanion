@@ -29,7 +29,7 @@ type NativeLikeResponse struct {
 
 // HandleNativeLike handles POST requests to like an item natively
 func HandleNativeLike(c *gin.Context) {
-	itemName := c.Param("item_name")
+	itemID := c.Param("item_id")
 	ipHash := hashIP(c.ClientIP())
 
 	var req NativeLikeRequest
@@ -46,15 +46,15 @@ func HandleNativeLike(c *gin.Context) {
 
 	// Check if IP hash has already liked this item
 	var ipLike models.NativeLike
-	ipExists := database.Db.Where("item_name = ? AND ip_hash = ?", itemName, ipHash).First(&ipLike).Error == nil
+	ipExists := database.Db.Where("item_id = ? AND ip_hash = ?", itemID, ipHash).First(&ipLike).Error == nil
 
 	// Check if token has already liked this item
 	var tokenLike models.NativeLike
-	tokenExists := database.Db.Where("item_name = ? AND token = ?", itemName, token).First(&tokenLike).Error == nil
+	tokenExists := database.Db.Where("item_id = ? AND token = ?", itemID, token).First(&tokenLike).Error == nil
 
 	// Block if IP OR token has already liked (AND logic for allowing)
 	if ipExists || tokenExists {
-		likeCount := getNativeLikeCount(itemName)
+		likeCount := getNativeLikeCount(itemID)
 		c.JSON(http.StatusConflict, NativeLikeResponse{
 			Success:   false,
 			Token:     token,
@@ -67,7 +67,7 @@ func HandleNativeLike(c *gin.Context) {
 
 	// Create new like with hashed IP
 	nativeLike := models.NativeLike{
-		ItemName: itemName,
+		ItemID: itemID,
 		IPHash:   ipHash,
 		Token:    token,
 	}
@@ -81,9 +81,9 @@ func HandleNativeLike(c *gin.Context) {
 	}
 
 	// Update the interaction count
-	updateNativeInteractionCount(itemName)
+	updateNativeInteractionCount(itemID)
 
-	likeCount := getNativeLikeCount(itemName)
+	likeCount := getNativeLikeCount(itemID)
 	c.JSON(http.StatusOK, NativeLikeResponse{
 		Success:   true,
 		Token:     token,
@@ -94,7 +94,7 @@ func HandleNativeLike(c *gin.Context) {
 
 // HandleNativeUnlike handles DELETE requests to unlike an item
 func HandleNativeUnlike(c *gin.Context) {
-	itemName := c.Param("item_name")
+	itemID := c.Param("item_id")
 	ipHash := hashIP(c.ClientIP())
 
 	var req NativeLikeRequest
@@ -107,10 +107,10 @@ func HandleNativeUnlike(c *gin.Context) {
 	}
 
 	// Find and delete the like that matches BOTH IP hash and token
-	result := database.Db.Where("item_name = ? AND ip_hash = ? AND token = ?", itemName, ipHash, req.Token).Delete(&models.NativeLike{})
+	result := database.Db.Where("item_id = ? AND ip_hash = ? AND token = ?", itemID, ipHash, req.Token).Delete(&models.NativeLike{})
 
 	if result.RowsAffected == 0 {
-		likeCount := getNativeLikeCount(itemName)
+		likeCount := getNativeLikeCount(itemID)
 		c.JSON(http.StatusNotFound, NativeLikeResponse{
 			Success:   false,
 			Token:     req.Token,
@@ -122,9 +122,9 @@ func HandleNativeUnlike(c *gin.Context) {
 	}
 
 	// Update the interaction count
-	updateNativeInteractionCount(itemName)
+	updateNativeInteractionCount(itemID)
 
-	likeCount := getNativeLikeCount(itemName)
+	likeCount := getNativeLikeCount(itemID)
 	c.JSON(http.StatusOK, NativeLikeResponse{
 		Success:   true,
 		Token:     req.Token,
@@ -135,7 +135,7 @@ func HandleNativeUnlike(c *gin.Context) {
 
 // HandleNativeLikeStatus handles GET requests to check like status
 func HandleNativeLikeStatus(c *gin.Context) {
-	itemName := c.Param("item_name")
+	itemID := c.Param("item_id")
 	ipHash := hashIP(c.ClientIP())
 	token := c.Query("token")
 
@@ -144,12 +144,12 @@ func HandleNativeLikeStatus(c *gin.Context) {
 	if token != "" {
 		// Check if this IP hash + token combo has liked
 		var like models.NativeLike
-		if database.Db.Where("item_name = ? AND ip_hash = ? AND token = ?", itemName, ipHash, token).First(&like).Error == nil {
+		if database.Db.Where("item_id = ? AND ip_hash = ? AND token = ?", itemID, ipHash, token).First(&like).Error == nil {
 			hasLiked = true
 		}
 	}
 
-	likeCount := getNativeLikeCount(itemName)
+	likeCount := getNativeLikeCount(itemID)
 	c.JSON(http.StatusOK, NativeLikeResponse{
 		Success:   true,
 		LikeCount: likeCount,
@@ -157,22 +157,22 @@ func HandleNativeLikeStatus(c *gin.Context) {
 	})
 }
 
-func getNativeLikeCount(itemName string) int {
+func getNativeLikeCount(itemID string) int {
 	var count int64
-	database.Db.Model(&models.NativeLike{}).Where("item_name = ?", itemName).Count(&count)
+	database.Db.Model(&models.NativeLike{}).Where("item_id = ?", itemID).Count(&count)
 	return int(count)
 }
 
-func updateNativeInteractionCount(itemName string) {
-	likeCount := getNativeLikeCount(itemName)
+func updateNativeInteractionCount(itemID string) {
+	likeCount := getNativeLikeCount(itemID)
 
 	var interaction models.Interaction
-	result := database.Db.Where("item_name = ? AND platform = ? AND target_name = ?", itemName, nativePlatform, nativeTargetName).First(&interaction)
+	result := database.Db.Where("item_id = ? AND platform = ? AND target_name = ?", itemID, nativePlatform, nativeTargetName).First(&interaction)
 
 	if result.Error != nil {
 		// Create new
 		interaction = models.Interaction{
-			ItemName:   itemName,
+			ItemID:   itemID,
 			Platform:   nativePlatform,
 			TargetName: nativeTargetName,
 			LikeCount:  likeCount,

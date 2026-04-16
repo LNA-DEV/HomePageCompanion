@@ -117,7 +117,7 @@ func publishPixelfedEntry(entry *gofeed.Item, target config.Target, connection c
 
 	log.Println("Pixelfed post published:", response.URL)
 
-	return publishedEntry(entry.Title, target.Platform, nil, &response.URL, &response.ID)
+	return publishedEntry(entry.GUID, target.Platform, nil, &response.URL, &response.ID)
 }
 
 func multipartWriter(body *bytes.Buffer, image []byte, description string) *multipart.Writer {
