@@ -14,6 +14,14 @@ type Config struct {
 	Webpush     struct {
 		Subscriber string `yaml:"subscriberMail"`
 	} `yaml:"webpush"`
+	Microblog Microblog `yaml:"microblog"`
+}
+
+// Microblog holds the federation settings for the locally-authored
+// microblog. PublishTo names entries from Targets; targets must declare
+// platform: mastodon (other platforms are ignored).
+type Microblog struct {
+	PublishTo []string `yaml:"publishTo"`
 }
 
 type Connection struct {
@@ -22,6 +30,19 @@ type Connection struct {
 	TargetName string  `yaml:"targetName"`
 	Caption    string  `yaml:"caption"`
 	Cron       *string `yaml:"cron"`
+
+	// RoutingTagsSource selects where to look for meta_skip:<platform> /
+	// meta_only:<platform> routing tags. Empty (default) disables routing.
+	// Allowed values: "" | "rss" | "exif".
+	RoutingTagsSource string `yaml:"routingTagsSource,omitempty"`
+
+	// AddExifToCaption appends a compact EXIF line (camera, lens, exposure)
+	// to the published caption. Defaults to false.
+	AddExifToCaption bool `yaml:"addExifToCaption,omitempty"`
+
+	// CopyrightSource appends a copyright line to the caption. Empty (default)
+	// disables it. Allowed values: "" | "rss" | "exif".
+	CopyrightSource string `yaml:"copyrightSource,omitempty"`
 }
 
 type Datasource struct {

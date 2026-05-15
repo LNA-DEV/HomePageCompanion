@@ -3,10 +3,8 @@ package interactions
 import (
 	"encoding/json"
 	"errors"
-	"log"
 	"net/http"
 
-	"github.com/LNA-DEV/HomePageCompanion/config"
 	"github.com/LNA-DEV/HomePageCompanion/database"
 	"github.com/LNA-DEV/HomePageCompanion/models"
 	"github.com/gin-gonic/gin"
@@ -50,110 +48,10 @@ func HandleInteraction(c *gin.Context) {
 	c.Data(http.StatusOK, "application/json", jsonData)
 }
 
-// FetchAndStoreInteractions fetches interactions from all platforms and stores them in the database
+// FetchAndStoreInteractions is a back-compat alias for FetchAllThrottled.
+// New code should call FetchAllThrottled directly.
 func FetchAndStoreInteractions() {
-	log.Println("Starting interactions fetch...")
-
-	// Get all unique item names from AutoUploadItem
-	var items []models.AutoUploadItem
-	if err := database.Db.Find(&items).Error; err != nil {
-		log.Printf("Error fetching auto upload items: %v", err)
-		return
-	}
-
-	// Group items by item ID to process each item once per platform
-	itemsByID := make(map[string][]models.AutoUploadItem)
-	for _, item := range items {
-		itemsByID[item.ItemID] = append(itemsByID[item.ItemID], item)
-	}
-
-	for itemID, platformItems := range itemsByID {
-		for _, item := range platformItems {
-			// Find the target for this platform
-			var target config.Target
-			for _, t := range config.Data.Targets {
-				if t.Platform == item.Platform {
-					target = t
-					break
-				}
-			}
-
-			if target.Name == "" {
-				continue
-			}
-
-			var likeCount int
-			var fetchErr error
-			retryConfig := DefaultRetryConfig()
-
-			switch item.Platform {
-			case "bluesky":
-				result, e := RetryWithBackoff(retryConfig, func() (*BlueskyLikesResponse, error) {
-					return handleBlueskyLikes(item, target.Name)
-				})
-				if e != nil {
-					fetchErr = e
-				} else {
-					likeCount = len(result.Likes)
-				}
-
-			case "pixelfed":
-				result, e := RetryWithBackoff(retryConfig, func() (*PixelfedLikesResponse, error) {
-					return handlePixelfedLikes(item, target.Name)
-				})
-				if e != nil {
-					fetchErr = e
-				} else {
-					likeCount = len(result.Accounts)
-				}
-
-			case "instagram":
-				result, e := RetryWithBackoff(retryConfig, func() (*InstagramLikesResponse, error) {
-					return handleInstagramLikes(item, target.Name)
-				})
-				if e != nil {
-					fetchErr = e
-				} else {
-					likeCount = result.LikeCount
-				}
-
-			default:
-				continue
-			}
-
-			if fetchErr != nil {
-				log.Printf("Error fetching %s likes for %s: %v", item.Platform, itemID, fetchErr)
-				continue
-			}
-
-			// Upsert interaction
-			var interaction models.Interaction
-			result := database.Db.Where("item_id = ? AND platform = ? AND target_name = ?", itemID, item.Platform, target.Name).First(&interaction)
-
-			if result.Error != nil {
-				// Create new
-				interaction = models.Interaction{
-					ItemID:     itemID,
-					Platform:   item.Platform,
-					TargetName: target.Name,
-					LikeCount:  likeCount,
-				}
-				if err := database.Db.Create(&interaction).Error; err != nil {
-					log.Printf("Error creating interaction for %s on %s: %v", itemID, item.Platform, err)
-				}
-			} else {
-				// Update existing
-				interaction.LikeCount = likeCount
-				if err := database.Db.Save(&interaction).Error; err != nil {
-					log.Printf("Error updating interaction for %s on %s: %v", itemID, item.Platform, err)
-				}
-			}
-
-			log.Printf("Stored interaction for %s on %s: %d likes", itemID, item.Platform, likeCount)
-		}
-	}
-
-	log.Println("Finished interactions fetch")
+	FetchAllThrottled()
 }
 
 type LikesResponse struct {

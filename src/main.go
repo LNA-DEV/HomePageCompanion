@@ -3,6 +3,7 @@ package main
 import (
 	"log"
 	"net/http"
+	"path/filepath"
 	"regexp"
 	"time"
 
@@ -13,6 +14,7 @@ import (
 	"github.com/LNA-DEV/HomePageCompanion/database"
 	"github.com/LNA-DEV/HomePageCompanion/interactions"
 	"github.com/LNA-DEV/HomePageCompanion/inventory"
+	"github.com/LNA-DEV/HomePageCompanion/logger"
 	"github.com/LNA-DEV/HomePageCompanion/models"
 	"github.com/LNA-DEV/HomePageCompanion/webmention"
 	"github.com/LNA-DEV/HomePageCompanion/webpush"
@@ -22,6 +24,19 @@ import (
 )
 
 func main() {
+	// Tee log output to dedicated daily files (app-*.log, access-*.log) as
+	// well as the original stdout/stderr. Safe to fail silently — we always
+	// keep the originals.
+	if err := logger.Init(filepath.Join("data", "logs")); err != nil {
+		log.Printf("logger init failed: %v", err)
+	}
+
+	// Gin's HTTP access log goes to its own access-*.log file (plus the
+	// original console FDs for docker logs). It does NOT feed into the app
+	// log stream.
+	gin.DefaultWriter = logger.Access()
+	gin.DefaultErrorWriter = logger.AccessError()
+
 	log.Print("Started companion")
 
 	// Config
@@ -32,7 +47,7 @@ func main() {
 	// Data migrations (must run before schema AutoMigrate so column renames are applied first)
 	database.RunMigrations()
 
-	database.MigrateModels([]interface{}{models.Webmention{}, models.AutoUploadItem{}, models.VAPIDKey{}, models.NotificationSubscription{}, models.Feed{}, models.FeedItem{}, models.Author{}, models.Category{}, models.Interaction{}, models.NativeLike{}})
+	database.MigrateModels([]interface{}{models.Webmention{}, models.AutoUploadItem{}, models.VAPIDKey{}, models.NotificationSubscription{}, models.Feed{}, models.FeedItem{}, models.Author{}, models.Category{}, models.Interaction{}, models.NativeLike{}, models.UploadAttempt{}, models.MicroblogPost{}, models.MicroblogPublication{}, models.MicroblogComment{}})
 
 	// Inventory
 	inventory.PopulateDatabase()
@@ -51,7 +66,7 @@ func main() {
 
 	c.AddFunc("0 */5 * * * *", func() { config.LoadConfig() })
 	c.AddFunc("0 * */1 * * *", func() { inventory.PopulateDatabase() })
-	c.AddFunc("0 0 * * * *", func() { interactions.FetchAndStoreInteractions() })
+	c.AddFunc("0 * * * * *", func() { interactions.RunTick() })
 	c.Start()
 
 	// Router config
@@ -89,10 +104,16 @@ func main() {
 		api.GET("/interactions/native/:item_id/status", interactions.HandleNativeLikeStatus)
 		api.POST("/interactions/fetch", validateAPIKey(), triggerInteractionsFetch)
 		api.POST("/backfill", validateAPIKey(), triggerBackfill)
+		// Client log ingest: also accepts ?token=<apiKey> so the browser can
+		// flush its buffer via navigator.sendBeacon (which cannot set headers).
+		api.POST("/admin/client-logs", validateAPIKeyOrToken(), admin.IngestClientLogs)
 	}
 
 	// Admin API routes
 	admin.RegisterRoutes(api, validateAPIKey())
+
+	// Microblog routes (both admin and public sub-trees)
+	admin.RegisterMicroblogRoutes(api, validateAPIKey())
 
 	// Health check
 	router.GET("/health", health)
@@ -142,8 +163,8 @@ func health(c *gin.Context) {
 }
 
 func triggerInteractionsFetch(c *gin.Context) {
-	interactions.FetchAndStoreInteractions()
-	c.JSON(http.StatusOK, gin.H{"status": "Interactions fetch triggered"})
+	go interactions.FetchAllThrottled()
+	c.JSON(http.StatusAccepted, gin.H{"status": "Interactions fetch scheduled"})
 }
 
 func triggerBackfill(c *gin.Context) {
@@ -163,5 +184,24 @@ func validateAPIKey() gin.HandlerFunc {
 		}
 
 		c.Next()
+	}
+}
+
+// validateAPIKeyOrToken accepts either the Authorization: ApiKey <key> header
+// (used by normal fetch requests) or a ?token=<key> query param (so the browser
+// can flush logs via navigator.sendBeacon, which cannot set custom headers).
+func validateAPIKeyOrToken() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		expectedAuth := "ApiKey " + config.Data.Security.ApiKey
+		if c.Request.Header.Get("Authorization") == expectedAuth {
+			c.Next()
+			return
+		}
+		if c.Query("token") == config.Data.Security.ApiKey && config.Data.Security.ApiKey != "" {
+			c.Next()
+			return
+		}
+		c.JSON(http.StatusUnauthorized, gin.H{"status": http.StatusUnauthorized, "message": "Authentication failed"})
+		c.Abort()
 	}
 }

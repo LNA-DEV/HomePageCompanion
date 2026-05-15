@@ -1,149 +1,48 @@
 package interactions
 
 import (
-	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"net/http"
-	"net/url"
-	"strings"
-	"time"
 
 	"github.com/LNA-DEV/HomePageCompanion/config"
 	"github.com/LNA-DEV/HomePageCompanion/models"
+	"github.com/LNA-DEV/HomePageCompanion/pixelfedapi"
 )
 
-type PixelfedAccount struct {
-	ID          string `json:"id"`
-	Username    string `json:"username"`
-	Acct        string `json:"acct"`
-	DisplayName string `json:"display_name"`
-	Avatar      string `json:"avatar"`
-	URL         string `json:"url"`
-}
-
-type PixelfedLikesResponse struct {
-	Instance string            `json:"instance"`
-	PostID   string            `json:"post_id"`
-	Accounts []PixelfedAccount `json:"accounts"`
-}
+// PixelfedLikesResponse keeps the previous public shape so the scheduler does
+// not need to change. Internally it is a thin re-export of pixelfedapi.LikesResponse.
+type PixelfedLikesResponse = pixelfedapi.LikesResponse
 
 func handlePixelfedLikes(item models.AutoUploadItem, targetName string) (*PixelfedLikesResponse, error) {
 	if item.PostUrl == nil || item.PostId == nil || *item.PostUrl == "" || *item.PostId == "" {
 		return nil, errors.New("missing PostURL or PostID")
 	}
 
-	instance, err := extractInstance(*item.PostUrl)
+	instance, err := pixelfedapi.InstanceFromPostURL(*item.PostUrl)
 	if err != nil {
 		return nil, fmt.Errorf("parse instance: %w", err)
 	}
 
-	token := getPixelfedToken(targetName)
-
+	token := pixelfedTokenFor(targetName)
 	if token == "" {
 		return nil, errors.New("empty Pixelfed token")
 	}
 
-	var allAccounts []PixelfedAccount
-	baseEndpoint := fmt.Sprintf("https://%s/api/v1/statuses/%s/favourited_by", instance, url.PathEscape(*item.PostId))
-	nextURL := baseEndpoint
-
-	for nextURL != "" {
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-
-		req, err := http.NewRequestWithContext(ctx, http.MethodGet, nextURL, nil)
-		if err != nil {
-			cancel()
-			return nil, err
-		}
-		req.Header.Set("Authorization", "Bearer "+token)
-		req.Header.Set("Accept", "application/json")
-
-		resp, err := http.DefaultClient.Do(req)
-		if err != nil {
-			cancel()
-			return nil, err
-		}
-
-		if resp.StatusCode == http.StatusTooManyRequests {
-			resp.Body.Close()
-			cancel()
+	resp, err := pixelfedapi.ListPostLikes(instance, token, *item.PostId)
+	if err != nil {
+		if errors.Is(err, pixelfedapi.ErrRateLimited) {
 			return nil, ErrRateLimited
 		}
-
-		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-			resp.Body.Close()
-			cancel()
-			return nil, fmt.Errorf("pixelfed API %s -> %s", nextURL, resp.Status)
-		}
-
-		var accounts []PixelfedAccount
-		if err := json.NewDecoder(resp.Body).Decode(&accounts); err != nil {
-			resp.Body.Close()
-			cancel()
-			return nil, fmt.Errorf("decode response: %w", err)
-		}
-
-		allAccounts = append(allAccounts, accounts...)
-
-		// Parse Link header for pagination
-		nextURL = parseNextLink(resp.Header.Get("Link"))
-
-		resp.Body.Close()
-		cancel()
+		return nil, err
 	}
-
-	return &PixelfedLikesResponse{
-		Instance: instance,
-		PostID:   *item.PostId,
-		Accounts: allAccounts,
-	}, nil
+	return resp, nil
 }
 
-func extractInstance(postURL string) (string, error) {
-	u, err := url.Parse(postURL)
-	if err != nil {
-		return "", err
-	}
-	h := strings.TrimSpace(u.Host)
-	if h == "" {
-		return "", errors.New("no host in post URL")
-	}
-	return h, nil
-}
-
-func getPixelfedToken(targetName string) string {
-	var target config.Target
-
-	for _, element := range config.Data.Targets {
-		if element.Name == targetName {
-			target = element
-			break
+func pixelfedTokenFor(targetName string) string {
+	for _, t := range config.Data.Targets {
+		if t.Name == targetName {
+			return t.PAT
 		}
 	}
-
-	return target.PAT
-}
-
-// parseNextLink extracts the "next" URL from a Link header
-// Example: <https://example.com/api?max_id=123>; rel="next", <https://example.com/api?since_id=456>; rel="prev"
-func parseNextLink(linkHeader string) string {
-	if linkHeader == "" {
-		return ""
-	}
-
-	for _, part := range strings.Split(linkHeader, ",") {
-		part = strings.TrimSpace(part)
-		if strings.Contains(part, `rel="next"`) {
-			// Extract URL between < and >
-			start := strings.Index(part, "<")
-			end := strings.Index(part, ">")
-			if start != -1 && end != -1 && end > start {
-				return part[start+1 : end]
-			}
-		}
-	}
-
 	return ""
 }

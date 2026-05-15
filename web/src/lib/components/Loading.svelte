@@ -9,8 +9,8 @@
 <div class="flex items-center justify-center py-12">
 	<div class="text-center">
 		<div
-			class="w-8 h-8 border-4 border-primary-200 border-t-primary-600 rounded-full animate-spin mx-auto mb-4"
+			class="w-8 h-8 border-4 border-primary-200 dark:border-primary-900 border-t-primary-600 rounded-full animate-spin mx-auto mb-4"
 		></div>
-		<p class="text-gray-500">{message}</p>
+		<p class="text-gray-500 dark:text-gray-400">{message}</p>
 	</div>
 </div>

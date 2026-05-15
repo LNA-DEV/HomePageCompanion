@@ -1,16 +1,19 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { page } from '$app/stores';
-	import { api, type Feed, type FeedItem, type PaginatedFeedItems } from '$lib/api';
-	import { PageHeader, Loading } from '$lib/components';
+	import { api, type Feed, type FeedItemWithEngagement } from '$lib/api';
+	import { PageHeader, Loading, SearchInput, PlatformBadge } from '$lib/components';
+	import { stripHtml } from '$lib/utils';
+	import { Heart, MessageSquare, ExternalLink, AlertTriangle } from 'lucide-svelte';
 
 	let feed = $state<Feed | null>(null);
-	let items = $state<FeedItem[]>([]);
+	let items = $state<FeedItemWithEngagement[]>([]);
 	let total = $state(0);
 	let currentPage = $state(1);
 	let limit = 20;
 	let error = $state('');
 	let loading = $state(true);
+	let query = $state('');
 
 	const feedId = $derived(Number($page.params.id));
 
@@ -55,17 +58,40 @@
 			day: 'numeric'
 		});
 	}
+
+	const filteredItems = $derived.by(() => {
+		const q = query.trim().toLowerCase();
+		if (!q) return items;
+		return items.filter((item) => {
+			const hay = (item.Title + ' ' + stripHtml(item.Description)).toLowerCase();
+			return hay.includes(q);
+		});
+	});
+
+	function totalLikes(item: FeedItemWithEngagement): number {
+		const platform = item.interactions.reduce((sum, i) => sum + i.LikeCount, 0);
+		return platform + item.nativeLikeCount;
+	}
+
+	function likeBreakdown(item: FeedItemWithEngagement): string {
+		const parts: string[] = [];
+		for (const i of item.interactions) {
+			if (i.LikeCount > 0) parts.push(`${i.Platform}: ${i.LikeCount}`);
+		}
+		if (item.nativeLikeCount > 0) parts.push(`native: ${item.nativeLikeCount}`);
+		return parts.join(' · ') || 'No likes yet';
+	}
 </script>
 
 {#if loading && !feed}
 	<Loading message="Loading feed..." />
 {:else if error}
 	<div class="card">
-		<p class="text-red-600">{error}</p>
-		<a href="/feeds" class="text-primary-600 hover:underline mt-2 inline-block">Back to feeds</a>
+		<p class="text-red-600 dark:text-red-400">{error}</p>
+		<a href="/feeds" class="text-primary-600 dark:text-primary-400 hover:underline mt-2 inline-block">Back to feeds</a>
 	</div>
 {:else if feed}
-	<PageHeader title={feed.Title || feed.FeedName} description={feed.Description}>
+	<PageHeader title={feed.Title || feed.FeedName} description={stripHtml(feed.Description)}>
 		{#snippet actions()}
 			<a href="/feeds" class="btn-secondary">Back to Feeds</a>
 		{/snippet}
@@ -75,62 +101,106 @@
 		<div class="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
 			{#if feed.FeedURL}
 				<div>
-					<span class="text-gray-500">Feed URL</span>
+					<span class="text-gray-500 dark:text-gray-400">Feed URL</span>
 					<p class="truncate font-mono text-xs mt-1">{feed.FeedURL}</p>
 				</div>
 			{/if}
 			{#if feed.Language}
 				<div>
-					<span class="text-gray-500">Language</span>
+					<span class="text-gray-500 dark:text-gray-400">Language</span>
 					<p class="mt-1">{feed.Language}</p>
 				</div>
 			{/if}
 			{#if feed.Generator}
 				<div>
-					<span class="text-gray-500">Generator</span>
+					<span class="text-gray-500 dark:text-gray-400">Generator</span>
 					<p class="mt-1">{feed.Generator}</p>
 				</div>
 			{/if}
 			<div>
-				<span class="text-gray-500">Total Items</span>
+				<span class="text-gray-500 dark:text-gray-400">Total Items</span>
 				<p class="mt-1 font-semibold">{total}</p>
 			</div>
 		</div>
 	</div>
 
 	<div class="card">
-		<div class="flex items-center justify-between mb-4">
+		<div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mb-4">
 			<h2 class="text-lg font-semibold">Feed Items</h2>
-			<div class="flex items-center gap-2 text-sm text-gray-500">
-				<span>
+			<div class="flex items-center gap-3">
+				<SearchInput bind:value={query} onInput={(v) => (query = v)} placeholder="Search items…" />
+				<span class="text-sm text-gray-500 dark:text-gray-400 whitespace-nowrap">
 					Page {currentPage} of {Math.ceil(total / limit) || 1}
 				</span>
 			</div>
 		</div>
 
-		{#if items.length === 0}
-			<p class="text-gray-500 py-8 text-center">No items in this feed</p>
+		{#if filteredItems.length === 0}
+			<p class="text-gray-500 dark:text-gray-400 py-8 text-center">
+				{query ? 'No items match your search' : 'No items in this feed'}
+			</p>
 		{:else}
 			<div class="space-y-4">
-				{#each items as item}
-					<div class="border rounded-lg p-4 hover:bg-gray-50 transition-colors">
-						<div class="flex gap-4">
+				{#each filteredItems as item (item.GUID)}
+					{@const likes = totalLikes(item)}
+					<div class="border border-gray-200 dark:border-gray-700 rounded-lg p-4 hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors">
+						<div class="flex flex-col sm:flex-row gap-4">
 							{#if item.ImageUrl}
 								<img
 									src={item.ImageUrl}
 									alt={item.Title}
-									class="w-20 h-20 object-cover rounded-lg flex-shrink-0"
+									class="w-full sm:w-20 h-40 sm:h-20 object-cover rounded-lg flex-shrink-0"
 								/>
 							{/if}
 							<div class="flex-1 min-w-0">
 								<h3 class="font-medium truncate">{item.Title}</h3>
 								{#if item.Description}
-									<p class="text-sm text-gray-600 mt-1 line-clamp-2">{item.Description}</p>
+									<p class="text-sm text-gray-600 dark:text-gray-400 mt-1 line-clamp-2">
+										{stripHtml(item.Description)}
+									</p>
 								{/if}
-								<div class="flex items-center gap-3 mt-2 text-xs text-gray-500">
+
+								<div class="flex flex-wrap items-center gap-2 mt-3">
+									{#each item.publications as pub}
+										<PlatformBadge platform={pub.Platform} href={pub.PostUrl} />
+									{/each}
+
+									{#each item.recentFailures ?? [] as fail}
+										<a
+											href={`/uploads?status=failed&platform=${encodeURIComponent(fail.platform)}`}
+											class="badge bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-200 hover:opacity-80"
+											title={`${fail.errorCode || 'failed'} on ${fail.targetName} · ${new Date(fail.createdAt).toLocaleString()}`}
+										>
+											<AlertTriangle size={12} />
+											Failed: {fail.platform}{#if fail.errorCode} · {fail.errorCode}{/if}
+										</a>
+									{/each}
+
+									{#if likes > 0}
+										<span
+											class="badge bg-rose-100 text-rose-700 dark:bg-rose-900/40 dark:text-rose-200"
+											title={likeBreakdown(item)}
+										>
+											<Heart size={12} />
+											{likes}
+										</span>
+									{/if}
+
+									{#if item.webmentionCount > 0}
+										<span
+											class="badge bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-200"
+											title="Webmentions received"
+										>
+											<MessageSquare size={12} />
+											{item.webmentionCount}
+										</span>
+									{/if}
+								</div>
+
+								<div class="flex items-center gap-3 mt-3 text-xs text-gray-500 dark:text-gray-400">
 									<span>{formatDate(item.Published)}</span>
 									{#if item.ItemType}
-										<span class="bg-gray-100 px-2 py-0.5 rounded">{item.ItemType}</span>
+										<span class="bg-gray-100 dark:bg-gray-800 px-2 py-0.5 rounded">{item.ItemType}</span>
 									{/if}
 									{#if item.Categories && item.Categories.length > 0}
 										<span class="truncate">
@@ -144,8 +214,9 @@
 									href={item.Link}
 									target="_blank"
 									rel="noopener noreferrer"
-									class="text-primary-600 hover:text-primary-800 text-sm flex-shrink-0"
+									class="text-primary-600 dark:text-primary-400 hover:text-primary-800 dark:hover:text-primary-300 text-sm flex-shrink-0 flex items-center gap-1 self-start"
 								>
+									<ExternalLink size={14} />
 									View
 								</a>
 							{/if}
@@ -154,7 +225,7 @@
 				{/each}
 			</div>
 
-			<div class="flex items-center justify-between mt-6 pt-4 border-t">
+			<div class="flex items-center justify-between mt-6 pt-4 border-t border-gray-200 dark:border-gray-700">
 				<button
 					onclick={prevPage}
 					disabled={currentPage === 1}
@@ -162,7 +233,7 @@
 				>
 					Previous
 				</button>
-				<span class="text-sm text-gray-500">
+				<span class="text-sm text-gray-500 dark:text-gray-400">
 					Showing {(currentPage - 1) * limit + 1} - {Math.min(currentPage * limit, total)} of {total}
 				</span>
 				<button

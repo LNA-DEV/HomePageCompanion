@@ -8,13 +8,12 @@ import (
 	_ "image/gif"
 	_ "image/jpeg"
 	_ "image/png"
-	"io"
 	"log"
 	"net/http"
 	"net/url"
 	"time"
 
-	blueskyapi "github.com/LNA-DEV/HomePageCompanion/blue_sky_api"
+	"github.com/LNA-DEV/HomePageCompanion/blueskyapi"
 	"github.com/LNA-DEV/HomePageCompanion/config"
 	"github.com/LNA-DEV/HomePageCompanion/database"
 	"github.com/LNA-DEV/HomePageCompanion/models"
@@ -338,34 +337,6 @@ func fetchAllPixelfedStatuses(target config.Target, accountID string) ([]Pixelfe
 
 // Bluesky backfill
 
-type BlueskyFeedResponse struct {
-	Feed   []BlueskyFeedItem `json:"feed"`
-	Cursor string            `json:"cursor"`
-}
-
-type BlueskyFeedItem struct {
-	Post struct {
-		URI    string `json:"uri"`
-		CID    string `json:"cid"`
-		Record struct {
-			Embed struct {
-				Images []struct {
-					Image struct {
-						Ref struct {
-							Link string `json:"$link"`
-						} `json:"ref"`
-					} `json:"image"`
-				} `json:"images"`
-			} `json:"embed"`
-		} `json:"record"`
-		Embed struct {
-			Images []struct {
-				Fullsize string `json:"fullsize"`
-			} `json:"images"`
-		} `json:"embed"`
-	} `json:"post"`
-}
-
 func backfillBluesky(target config.Target, source config.Datasource) {
 	items, err := getItemsNeedingBackfill("bluesky")
 	if err != nil {
@@ -405,14 +376,14 @@ func backfillBluesky(target config.Target, source config.Datasource) {
 	}
 
 	// Login to Bluesky
-	session, err := blueskyapi.BlueskyLogin(target.Username, target.PAT)
+	session, err := blueskyapi.Login(target.Username, target.PAT)
 	if err != nil {
 		log.Printf("Error logging into Bluesky: %v", err)
 		return
 	}
 
-	// Fetch all posts
-	posts, err := fetchAllBlueskyPosts(session)
+	// Fetch all posts via the shared API package paginator.
+	posts, err := blueskyapi.ListAllAuthorPosts(session, session.Did)
 	if err != nil {
 		log.Printf("Error fetching Bluesky posts: %v", err)
 		return
@@ -447,47 +418,6 @@ func backfillBluesky(target config.Target, source config.Datasource) {
 			}
 		}
 	}
-}
-
-func fetchAllBlueskyPosts(session *blueskyapi.BlueskySession) ([]BlueskyFeedItem, error) {
-	var allPosts []BlueskyFeedItem
-	cursor := ""
-
-	for {
-		feedURL := fmt.Sprintf("https://bsky.social/xrpc/app.bsky.feed.getAuthorFeed?actor=%s&limit=50", url.QueryEscape(session.Did))
-		if cursor != "" {
-			feedURL += "&cursor=" + url.QueryEscape(cursor)
-		}
-
-		req, _ := http.NewRequest("GET", feedURL, nil)
-		req.Header.Set("Authorization", "Bearer "+session.AccessJwt)
-
-		resp, err := http.DefaultClient.Do(req)
-		if err != nil {
-			return allPosts, err
-		}
-
-		body, _ := io.ReadAll(resp.Body)
-		resp.Body.Close()
-
-		var feedResp BlueskyFeedResponse
-		if err := json.Unmarshal(body, &feedResp); err != nil {
-			return allPosts, err
-		}
-
-		if len(feedResp.Feed) == 0 {
-			break
-		}
-
-		allPosts = append(allPosts, feedResp.Feed...)
-
-		if feedResp.Cursor == "" {
-			break
-		}
-		cursor = feedResp.Cursor
-	}
-
-	return allPosts, nil
 }
 
 // Instagram backfill

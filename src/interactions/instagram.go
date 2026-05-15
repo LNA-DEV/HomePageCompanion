@@ -1,19 +1,13 @@
 package interactions
 
 import (
-	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
-	"net/http"
-	"time"
 
 	"github.com/LNA-DEV/HomePageCompanion/config"
+	"github.com/LNA-DEV/HomePageCompanion/instagramapi"
 	"github.com/LNA-DEV/HomePageCompanion/models"
 )
-
-var instagramGraphURL = "https://graph.instagram.com/v22.0/"
 
 type InstagramLikesResponse struct {
 	MediaID   string `json:"media_id"`
@@ -25,64 +19,25 @@ func handleInstagramLikes(item models.AutoUploadItem, targetName string) (*Insta
 		return nil, errors.New("missing PostID")
 	}
 
-	token := getInstagramToken(targetName)
+	token := instagramTokenFor(targetName)
 	if token == "" {
 		return nil, errors.New("empty Instagram access token")
 	}
 
-	likeCount, err := getInstagramLikeCount(*item.PostId, token)
+	count, err := instagramapi.MediaLikeCount(*item.PostId, token)
 	if err != nil {
+		if errors.Is(err, instagramapi.ErrRateLimited) {
+			return nil, ErrRateLimited
+		}
 		return nil, fmt.Errorf("failed to get Instagram likes: %w", err)
 	}
-
-	return &InstagramLikesResponse{
-		MediaID:   *item.PostId,
-		LikeCount: likeCount,
-	}, nil
+	return &InstagramLikesResponse{MediaID: *item.PostId, LikeCount: count}, nil
 }
 
-func getInstagramLikeCount(mediaID, accessToken string) (int, error) {
-	endpoint := fmt.Sprintf("%s%s?fields=like_count&access_token=%s", instagramGraphURL, mediaID, accessToken)
-
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
-	if err != nil {
-		return 0, err
-	}
-	req.Header.Set("Accept", "application/json")
-
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return 0, err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode == http.StatusTooManyRequests {
-		return 0, ErrRateLimited
-	}
-
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		body, _ := io.ReadAll(resp.Body)
-		return 0, fmt.Errorf("Instagram Graph API returned status %s: %s", resp.Status, string(body))
-	}
-
-	var result struct {
-		LikeCount int    `json:"like_count"`
-		ID        string `json:"id"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return 0, fmt.Errorf("decode response: %w", err)
-	}
-
-	return result.LikeCount, nil
-}
-
-func getInstagramToken(targetName string) string {
-	for _, element := range config.Data.Targets {
-		if element.Name == targetName {
-			return element.AccessToken
+func instagramTokenFor(targetName string) string {
+	for _, t := range config.Data.Targets {
+		if t.Name == targetName {
+			return t.AccessToken
 		}
 	}
 	return ""

@@ -1,8 +1,11 @@
-<script lang="ts" generics="T extends Record<string, unknown>">
+<script lang="ts" generics="T">
+	import type { Snippet } from 'svelte';
+
 	interface Column<T> {
 		key: keyof T;
 		label: string;
 		format?: (value: unknown, row: T) => string;
+		render?: Snippet<[T]>;
 	}
 
 	interface Props {
@@ -29,7 +32,7 @@
 <div class="overflow-x-auto">
 	<table class="w-full">
 		<thead>
-			<tr class="bg-gray-50 border-b">
+			<tr class="bg-gray-50 dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700">
 				{#each columns as col}
 					<th class="table-header">{col.label}</th>
 				{/each}
@@ -41,21 +44,27 @@
 		<tbody>
 			{#if data.length === 0}
 				<tr>
-					<td colspan={columns.length + (onDelete ? 1 : 0)} class="table-cell text-center text-gray-500 py-8">
+					<td colspan={columns.length + (onDelete ? 1 : 0)} class="table-cell text-center text-gray-500 dark:text-gray-400 py-8">
 						{emptyMessage}
 					</td>
 				</tr>
 			{:else}
 				{#each data as row}
-					<tr class="border-b hover:bg-gray-50 transition-colors">
+					<tr class="border-b border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors">
 						{#each columns as col}
-							<td class="table-cell">{getValue(row, col)}</td>
+							<td class="table-cell">
+								{#if col.render}
+									{@render col.render(row)}
+								{:else}
+									{getValue(row, col)}
+								{/if}
+							</td>
 						{/each}
 						{#if onDelete}
 							<td class="table-cell text-right">
 								<button
 									onclick={() => onDelete(row)}
-									class="text-red-600 hover:text-red-800 text-sm font-medium"
+									class="text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300 text-sm font-medium"
 								>
 									Delete
 								</button>

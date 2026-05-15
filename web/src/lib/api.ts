@@ -83,6 +83,22 @@ class ApiClient {
 		return this.request<PaginatedFeedItems>(`/admin/feeds/${id}/items?page=${page}&limit=${limit}`);
 	}
 
+	async getFeedItemsLookup(guids: string[]): Promise<Record<string, MiniFeedItem>> {
+		if (guids.length === 0) return {};
+		return this.request<Record<string, MiniFeedItem>>('/admin/feed-items/lookup', {
+			method: 'POST',
+			body: JSON.stringify({ guids })
+		});
+	}
+
+	async getFeedItemsLookupByLink(links: string[]): Promise<Record<string, MiniFeedItem>> {
+		if (links.length === 0) return {};
+		return this.request<Record<string, MiniFeedItem>>('/admin/feed-items/lookup', {
+			method: 'POST',
+			body: JSON.stringify({ links })
+		});
+	}
+
 	// Publications
 	async getPublications(platform?: string): Promise<AutoUploadItem[]> {
 		const query = platform ? `?platform=${platform}` : '';
@@ -94,10 +110,10 @@ class ApiClient {
 	}
 
 	// Interactions
-	async getInteractions(platform?: string, itemName?: string): Promise<Interaction[]> {
+	async getInteractions(platform?: string, itemId?: string): Promise<Interaction[]> {
 		const params = new URLSearchParams();
 		if (platform) params.set('platform', platform);
-		if (itemName) params.set('itemName', itemName);
+		if (itemId) params.set('itemId', itemId);
 		const query = params.toString() ? `?${params.toString()}` : '';
 		return this.request<Interaction[]>(`/admin/interactions${query}`);
 	}
@@ -130,12 +146,142 @@ class ApiClient {
 		await this.request(`/upload/${connectionName}`, { method: 'POST' });
 	}
 
+	// Interactions fetch trigger
+	async triggerInteractionsFetch(): Promise<void> {
+		await this.request('/interactions/fetch', { method: 'POST' });
+	}
+
+	// Backfill trigger
+	async triggerBackfill(): Promise<void> {
+		await this.request('/backfill', { method: 'POST' });
+	}
+
 	// Broadcast
 	async broadcast(notification: BroadcastNotification): Promise<void> {
 		await this.request('/webpush/broadcast', {
 			method: 'POST',
 			body: JSON.stringify(notification)
 		});
+	}
+
+	// Logs
+	async getLogs(opts: { file?: string; tail?: number; search?: string } = {}): Promise<LogsResponse> {
+		const params = new URLSearchParams();
+		if (opts.file) params.set('file', opts.file);
+		if (opts.tail) params.set('tail', String(opts.tail));
+		if (opts.search) params.set('search', opts.search);
+		const q = params.toString();
+		return this.request<LogsResponse>(`/admin/logs${q ? `?${q}` : ''}`);
+	}
+
+	// Upload attempts
+	async getUploadAttempts(
+		opts: {
+			status?: 'failed' | 'success' | 'all';
+			platform?: string;
+			targetName?: string;
+			itemId?: string;
+			page?: number;
+			limit?: number;
+		} = {}
+	): Promise<PaginatedUploadAttempts> {
+		const params = new URLSearchParams();
+		if (opts.status && opts.status !== 'all') params.set('status', opts.status);
+		if (opts.platform) params.set('platform', opts.platform);
+		if (opts.targetName) params.set('targetName', opts.targetName);
+		if (opts.itemId) params.set('itemId', opts.itemId);
+		if (opts.page) params.set('page', String(opts.page));
+		if (opts.limit) params.set('limit', String(opts.limit));
+		const q = params.toString();
+		return this.request<PaginatedUploadAttempts>(`/admin/upload-attempts${q ? `?${q}` : ''}`);
+	}
+
+	// Target health
+	async getTargetHealth(): Promise<TargetHealth[]> {
+		return this.request<TargetHealth[]>('/admin/targets/health');
+	}
+
+	// Client logs (browser → server)
+	async sendClientLogs(
+		clientId: string,
+		entries: { level: string; source: string; url?: string; time: string; message: string }[]
+	): Promise<void> {
+		await this.request('/admin/client-logs', {
+			method: 'POST',
+			body: JSON.stringify({ clientId, entries })
+		});
+	}
+
+	// Microblog (admin)
+	async getMicroblogPosts(opts: { page?: number; limit?: number } = {}): Promise<PaginatedMicroblogPosts> {
+		const params = new URLSearchParams();
+		if (opts.page) params.set('page', String(opts.page));
+		if (opts.limit) params.set('limit', String(opts.limit));
+		const q = params.toString();
+		return this.request<PaginatedMicroblogPosts>(`/admin/microblog/posts${q ? `?${q}` : ''}`);
+	}
+
+	async getMicroblogPost(id: number): Promise<MicroblogPostWithPublications> {
+		return this.request<MicroblogPostWithPublications>(`/admin/microblog/posts/${id}`);
+	}
+
+	async createMicroblogPost(payload: {
+		body: string;
+		contentWarning?: string;
+		imageUrl?: string;
+		imageAltText?: string;
+	}): Promise<MicroblogPostWithPublications> {
+		return this.request<MicroblogPostWithPublications>('/admin/microblog/posts', {
+			method: 'POST',
+			body: JSON.stringify(payload)
+		});
+	}
+
+	async deleteMicroblogPost(id: number): Promise<void> {
+		await this.request(`/admin/microblog/posts/${id}`, { method: 'DELETE' });
+	}
+
+	async retryMicroblogPublication(postId: number, publicationId: number): Promise<MicroblogPublication> {
+		return this.request<MicroblogPublication>(
+			`/admin/microblog/posts/${postId}/retry/${publicationId}`,
+			{ method: 'POST' }
+		);
+	}
+
+	async refreshMicroblogPost(id: number): Promise<PublicMicroblogPost> {
+		return this.request<PublicMicroblogPost>(`/admin/microblog/posts/${id}/refresh`, {
+			method: 'POST'
+		});
+	}
+
+	async uploadMicroblogImage(file: File): Promise<{ url: string; size: number }> {
+		const form = new FormData();
+		form.append('file', file);
+		const headers: Record<string, string> = {};
+		if (this.apiKey) headers['Authorization'] = `ApiKey ${this.apiKey}`;
+		const resp = await fetch(`${API_BASE}/admin/microblog/upload`, {
+			method: 'POST',
+			headers,
+			body: form
+		});
+		if (resp.status === 401) {
+			this.clearApiKey();
+			throw new Error('Unauthorized');
+		}
+		if (!resp.ok) {
+			throw new Error(`Upload failed: ${resp.status}`);
+		}
+		return resp.json();
+	}
+
+	// Microblog (public — no API key needed, but we send it anyway since
+	// the admin UI is authenticated)
+	async getPublicMicroblogPost(slug: string): Promise<PublicMicroblogPost> {
+		return this.request<PublicMicroblogPost>(`/microblog/posts/${slug}`);
+	}
+
+	async getMicroblogComments(slug: string): Promise<MicroblogComment[]> {
+		return this.request<MicroblogComment[]>(`/microblog/posts/${slug}/comments`);
 	}
 }
 
@@ -190,6 +336,30 @@ export interface FeedItem {
 	Authors: Author[];
 }
 
+export interface FeedItemWithEngagement extends FeedItem {
+	publications: AutoUploadItem[];
+	interactions: Interaction[];
+	nativeLikeCount: number;
+	webmentionCount: number;
+	recentFailures: RecentFailure[];
+}
+
+export interface RecentFailure {
+	platform: string;
+	targetName: string;
+	errorCode: string;
+	httpStatus?: number;
+	createdAt: string;
+}
+
+export interface MiniFeedItem {
+	id: number;
+	feedId: number;
+	title: string;
+	imageUrl: string;
+	link: string;
+}
+
 export interface Category {
 	ID: number;
 	Name: string;
@@ -202,7 +372,7 @@ export interface Author {
 }
 
 export interface PaginatedFeedItems {
-	items: FeedItem[];
+	items: FeedItemWithEngagement[];
 	total: number;
 	page: number;
 	limit: number;
@@ -211,7 +381,7 @@ export interface PaginatedFeedItems {
 export interface AutoUploadItem {
 	ID: number;
 	Platform: string;
-	ItemName: string;
+	ItemID: string;
 	PostUrl: string | null;
 	VersionId: string | null;
 	PostId: string | null;
@@ -220,7 +390,7 @@ export interface AutoUploadItem {
 
 export interface Interaction {
 	ID: number;
-	ItemName: string;
+	ItemID: string;
 	Platform: string;
 	TargetName: string;
 	LikeCount: number;
@@ -236,7 +406,7 @@ export interface InteractionSummary {
 }
 
 export interface ItemLikes {
-	itemName: string;
+	itemId: string;
 	totalLikes: number;
 }
 
@@ -260,6 +430,8 @@ export interface Connection {
 	caption: string;
 	cron: string | null;
 	platform: string;
+	sourceFeedId?: number | null;
+	targetUrl?: string;
 }
 
 export interface BroadcastNotification {
@@ -267,4 +439,110 @@ export interface BroadcastNotification {
 	body: string;
 	url?: string;
 	icon?: string;
+}
+
+export interface LogsResponse {
+	files: string[];
+	file: string;
+	lines: string[];
+}
+
+export interface UploadAttempt {
+	id: number;
+	connectionName: string;
+	itemId: string;
+	platform: string;
+	targetName: string;
+	success: boolean;
+	errorCode?: string;
+	errorMessage?: string;
+	httpStatus?: number;
+	createdAt: string;
+}
+
+export interface PaginatedUploadAttempts {
+	items: UploadAttempt[];
+	total: number;
+	page: number;
+	limit: number;
+}
+
+export interface MicroblogPost {
+	id: number;
+	slug: string;
+	body: string;
+	contentWarning: string;
+	imageUrl: string;
+	imageAltText: string;
+	createdAt: string;
+	updatedAt: string;
+}
+
+export interface MicroblogPublication {
+	id: number;
+	postId: number;
+	targetName: string;
+	platform: string;
+	postUrl?: string;
+	externalPostId?: string;
+	success: boolean;
+	errorMessage?: string;
+	likesRefreshedAt?: string;
+	commentsRefreshedAt?: string;
+	createdAt: string;
+	updatedAt: string;
+	errorOnAttempt?: string;
+}
+
+export interface MicroblogPostWithPublications extends MicroblogPost {
+	publications: MicroblogPublication[];
+}
+
+export interface PaginatedMicroblogPosts {
+	items: MicroblogPostWithPublications[];
+	total: number;
+	page: number;
+	limit: number;
+}
+
+export interface MicroblogComment {
+	id: number;
+	postId: number;
+	platform: string;
+	externalId: string;
+	author: string;
+	authorUrl: string;
+	avatarUrl: string;
+	body: string;
+	postedAt: string;
+	importedAt: string;
+}
+
+export interface PublicMicroblogPost {
+	id: number;
+	slug: string;
+	body: string;
+	contentWarning?: string;
+	imageUrl?: string;
+	imageAltText?: string;
+	createdAt: string;
+	likeCount: number;
+	commentCount: number;
+	publications: { platform: string; targetName: string; postUrl?: string }[];
+}
+
+export type TargetHealthStatus = 'healthy' | 'degraded' | 'down' | 'unknown';
+
+export interface TargetHealth {
+	name: string;
+	platform: string;
+	status: TargetHealthStatus;
+	lastAttemptAt?: string;
+	lastSuccessAt?: string;
+	lastFailureAt?: string;
+	lastError?: string;
+	lastErrorCode?: string;
+	lastHttpStatus?: number;
+	recentFailures: number;
+	recentSuccesses: number;
 }

@@ -4,3 +4,5 @@ export { default as DataTable } from './DataTable.svelte';
 export { default as PageHeader } from './PageHeader.svelte';
 export { default as Modal } from './Modal.svelte';
 export { default as Loading } from './Loading.svelte';
+export { default as SearchInput } from './SearchInput.svelte';
+export { default as PlatformBadge } from './PlatformBadge.svelte';

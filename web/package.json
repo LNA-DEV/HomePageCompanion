@@ -13,6 +13,7 @@
 		"@sveltejs/adapter-static": "^3.0.8",
 		"@sveltejs/kit": "^2.15.1",
 		"@sveltejs/vite-plugin-svelte": "^5.0.3",
+		"@vite-pwa/sveltekit": "^1.1.0",
 		"autoprefixer": "^10.4.20",
 		"postcss": "^8.4.49",
 		"svelte": "^5.16.0",
@@ -21,5 +22,8 @@
 		"typescript": "^5.7.2",
 		"vite": "^6.0.6"
 	},
-	"type": "module"
+	"type": "module",
+	"dependencies": {
+		"lucide-svelte": "^1.0.1"
+	}
 }

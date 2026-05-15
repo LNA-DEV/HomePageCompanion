@@ -1,0 +1,62 @@
+# Templated companion to src/data/config.yaml.
+# Copy this file to src/data/config.yaml and adjust the structural parts
+# (datasource feed URLs, connection names, microblog targets, etc.).
+# Secrets are referenced via ${NAME} placeholders — put their real values
+# in `.env` at the repo root (or `data/.env`). See `.env.example`.
+
+security:
+  apiKey: ${ADMIN_API_KEY}
+  ipHashSalt: ${IP_HASH_SALT}
+  # Optional: domain used for CORS allow-list.
+  domain: ${COMPANION_DOMAIN:-example.com}
+
+datasources:
+  rss:
+    - name: "Photo RSS"
+      feedUrl: "https://example.com/gallery/index.xml"
+      itemType: image
+
+targets:
+  - name: main-pixelfed
+    platform: pixelfed
+    pat: ${PIXELFED_PAT}
+    instance: ${PIXELFED_INSTANCE:-https://pixelfed.de}
+
+  - name: main-bluesky
+    platform: bluesky
+    username: ${BLUESKY_USERNAME}
+    pat: ${BLUESKY_PAT}
+
+  - name: main-instagram
+    platform: instagram
+    accessToken: ${INSTAGRAM_ACCESS_TOKEN}
+    accountId: ${INSTAGRAM_ACCOUNT_ID}
+
+  - name: main-mastodon
+    platform: mastodon
+    instance: ${MASTODON_INSTANCE}
+    pat: ${MASTODON_PAT}
+
+connections:
+  - name: pixelfed
+    sourceName: Photo RSS
+    targetName: main-pixelfed
+    caption: "More at https://example.com/gallery"
+  - name: bluesky
+    sourceName: Photo RSS
+    targetName: main-bluesky
+    caption: "More at https://example.com/gallery"
+  - name: instagram
+    sourceName: Photo RSS
+    targetName: main-instagram
+    caption: "More at example.com or the link in my profile"
+  - name: mastodon
+    sourceName: Photo RSS
+    targetName: main-mastodon
+    caption: "More at https://example.com/gallery"
+
+microblog:
+  publishTo: [main-mastodon, main-bluesky]
+
+webpush:
+  subscriberMail: ${WEBPUSH_SUBSCRIBER_MAIL:-mailto:admin@example.com}

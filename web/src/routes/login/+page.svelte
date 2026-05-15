@@ -27,11 +27,11 @@
 	}
 </script>
 
-<div class="min-h-screen flex items-center justify-center bg-gray-100">
+<div class="min-h-screen flex items-center justify-center bg-gray-100 dark:bg-gray-950">
 	<div class="card max-w-md w-full mx-4">
 		<div class="text-center mb-8">
-			<h1 class="text-2xl font-bold text-gray-900">HomePageCompanion</h1>
-			<p class="text-gray-500 mt-2">Admin Dashboard</p>
+			<h1 class="text-2xl font-bold text-gray-900 dark:text-white">HomePageCompanion</h1>
+			<p class="text-gray-500 dark:text-gray-400 mt-2">Admin Dashboard</p>
 		</div>
 
 		<form onsubmit={handleSubmit}>
@@ -49,7 +49,7 @@
 			</div>
 
 			{#if error}
-				<div class="mb-4 p-3 bg-red-50 text-red-700 rounded-lg text-sm">
+				<div class="mb-4 p-3 bg-red-50 dark:bg-red-900/30 text-red-700 dark:text-red-300 rounded-lg text-sm">
 					{error}
 				</div>
 			{/if}

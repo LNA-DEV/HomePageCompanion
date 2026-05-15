@@ -74,7 +74,7 @@
 />
 
 {#if error}
-	<div class="mb-4 p-3 bg-red-50 text-red-700 rounded-lg">{error}</div>
+	<div class="mb-4 p-3 bg-red-50 dark:bg-red-900/30 text-red-700 dark:text-red-300 rounded-lg">{error}</div>
 {/if}
 
 {#if loading}
@@ -96,7 +96,7 @@
 
 <Modal open={deleteModal} title="Delete Subscriber" onClose={() => (deleteModal = false)}>
 	<p>Are you sure you want to remove this subscriber?</p>
-	<p class="text-sm text-gray-500 mt-2">They will no longer receive push notifications.</p>
+	<p class="text-sm text-gray-500 dark:text-gray-400 mt-2">They will no longer receive push notifications.</p>
 	{#snippet actions()}
 		<button onclick={() => (deleteModal = false)} class="btn-secondary">Cancel</button>
 		<button onclick={confirmDelete} class="btn-danger" disabled={deleting}>

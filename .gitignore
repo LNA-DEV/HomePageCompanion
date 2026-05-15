@@ -42,3 +42,5 @@ web/.svelte-kit/
 *.db-wal
 *.db-shm
 src/cmd/migrate-guids/main.go
+src/data/logs/**
+src/data/microblog/**

@@ -13,6 +13,7 @@ import (
 
 	"github.com/LNA-DEV/HomePageCompanion/config"
 	"github.com/LNA-DEV/HomePageCompanion/database"
+	"github.com/LNA-DEV/HomePageCompanion/imagemeta"
 	"github.com/LNA-DEV/HomePageCompanion/models"
 	"github.com/mmcdole/gofeed"
 	"gorm.io/gorm"
@@ -36,23 +37,116 @@ func Publish(connection config.Connection) {
 		}
 	}
 
-	entry := getEntryToPublish(source, target)
+	entry, feed := getEntryToPublish(source, target)
+	if entry == nil {
+		return
+	}
 
-	switch target.Platform {
-	case "pixelfed":
-		if err := publishPixelfedEntry(entry, target, connection); err != nil {
-			log.Fatalf("Failed to publish: %v", err)
-		}
-
-	case "instagram":
-		publishInstagramEntry(entry, target, connection)
-
-	case "bluesky":
-		if err := publishBlueskyEntry(entry, target, connection); err != nil {
-			log.Fatalf("Failed to publish: %v", err)
+	// Download full-image bytes once if any metadata feature is enabled.
+	var imageBytes []byte
+	if needsImageBytes(connection) {
+		bytes, dlErr := downloadImage(metadataImageURL(entry))
+		if dlErr != nil {
+			log.Printf("autouploader: metadata image download for %q failed: %v", entry.GUID, dlErr)
+		} else {
+			imageBytes = bytes
 		}
 	}
 
+	// Evaluate routing-by-meta-tags before doing any network publish.
+	if connection.RoutingTagsSource != "" {
+		tags := collectRoutingTags(connection, entry, imageBytes)
+		decision := EvaluateRouting(tags, target.Platform)
+		if !decision.Allow {
+			log.Printf("autouploader: skipping %q on %s (%s): %s",
+				entry.GUID, target.Platform, target.Name, decision.Reason)
+			return
+		}
+	}
+
+	caption := BuildCaption(connection, entry, feed, imageBytes, captionLimitFor(target.Platform))
+
+	var err error
+	switch target.Platform {
+	case "pixelfed":
+		err = publishPixelfedEntry(entry, target, caption)
+	case "instagram":
+		err = publishInstagramEntry(entry, target, caption)
+	case "bluesky":
+		err = publishBlueskyEntry(entry, target, caption)
+	case "mastodon":
+		err = publishMastodonEntry(entry, target, caption)
+	default:
+		log.Printf("Unknown platform %q for connection %q", target.Platform, connection.Name)
+		return
+	}
+
+	if err != nil {
+		log.Printf("Failed to publish %q to %s (%s): %v", entry.GUID, target.Platform, target.Name, err)
+	}
+	RecordAttempt(connection.Name, entry.GUID, target.Platform, target.Name, err, 0)
+}
+
+// needsImageBytes returns true when any of the metadata features that require
+// reading EXIF/IPTC/XMP from the actual image are enabled on this connection.
+func needsImageBytes(c config.Connection) bool {
+	return c.AddExifToCaption ||
+		c.RoutingTagsSource == "exif" ||
+		c.CopyrightSource == "exif"
+}
+
+// metadataImageURL picks the best URL for downloading the *original* image so
+// that EXIF/IPTC/XMP is intact. Hugo's image-RSS commonly puts the full file
+// in <enclosure>; everything else falls back to entry.Image.URL.
+func metadataImageURL(entry *gofeed.Item) string {
+	if entry == nil {
+		return ""
+	}
+	for _, enc := range entry.Enclosures {
+		if enc == nil {
+			continue
+		}
+		if enc.URL != "" {
+			return enc.URL
+		}
+	}
+	if entry.Image != nil {
+		return entry.Image.URL
+	}
+	return ""
+}
+
+// captionLimitFor returns the per-platform soft cap used by BuildCaption.
+func captionLimitFor(platform string) int {
+	switch platform {
+	case "bluesky":
+		return 300
+	default:
+		return 2000
+	}
+}
+
+// collectRoutingTags returns the list of tag strings used by EvaluateRouting,
+// drawn from the source declared on the connection.
+func collectRoutingTags(c config.Connection, entry *gofeed.Item, imageBytes []byte) []string {
+	switch c.RoutingTagsSource {
+	case "rss":
+		if entry == nil {
+			return nil
+		}
+		return append([]string(nil), entry.Categories...)
+	case "exif":
+		if len(imageBytes) == 0 {
+			return nil
+		}
+		meta, _ := imagemeta.Extract(imageBytes)
+		if meta == nil {
+			return nil
+		}
+		return append([]string(nil), meta.Keywords...)
+	default:
+		return nil
+	}
 }
 
 func GetPublishedEntry(itemID string, platform string) (*models.AutoUploadItem, error) {
@@ -69,23 +163,25 @@ func GetPublishedEntry(itemID string, platform string) (*models.AutoUploadItem, 
 	return &item, nil
 }
 
-func getEntryToPublish(source config.Datasource, target config.Target) *gofeed.Item {
+func getEntryToPublish(source config.Datasource, target config.Target) (*gofeed.Item, *gofeed.Feed) {
 	feedURL := source.FeedURL
 	parser := gofeed.NewParser()
 	feed, err := parser.ParseURL(feedURL)
 	if err != nil {
-		log.Fatalf("Error parsing feed: %v", err)
+		log.Printf("Error parsing feed: %v", err)
+		return nil, nil
 	}
 
 	specificNames, err := getAlreadyUploadedItems(target.Platform)
 	if err != nil {
-		log.Fatal(err)
+		log.Printf("Error fetching already-uploaded items: %v", err)
+		return nil, feed
 	}
 
 	filteredEntries := filterEntries(feed.Items, specificNames)
 	if len(filteredEntries) == 0 {
 		log.Println("No entries available after filtering.")
-		return nil
+		return nil, feed
 	}
 
 	now := time.Now()
@@ -111,7 +207,7 @@ func getEntryToPublish(source config.Datasource, target config.Target) *gofeed.I
 
 	if closestEntry == nil {
 		log.Println("No valid entries available after filtering.")
-		return nil
+		return nil, feed
 	}
 
 	var closestEntries []*gofeed.Item
@@ -128,7 +224,7 @@ func getEntryToPublish(source config.Datasource, target config.Target) *gofeed.I
 	fmt.Println("URL:", randomEntry.Link)
 	fmt.Println("Published Date:", randomEntry.Published)
 
-	return randomEntry
+	return randomEntry, feed
 }
 
 func getAlreadyUploadedItems(platform string) ([]string, error) {
@@ -187,3 +283,8 @@ func downloadImage(imageURL string) ([]byte, error) {
 	defer resp.Body.Close()
 	return io.ReadAll(resp.Body)
 }
+
+// DownloadImageBytes is an exported alias of the package-internal
+// downloadImage helper. Used by sibling packages (microblog) that need to
+// reuse the same fetch + 200-only contract.
+func DownloadImageBytes(imageURL string) ([]byte, error) { return downloadImage(imageURL) }
