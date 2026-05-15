@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"log"
 	"os"
+	"strconv"
 	"strings"
 )
 
@@ -57,6 +58,13 @@ func loadDotenv(path string) {
 // against the current OS environment. `$$` collapses to a literal `$`.
 // Any other `$...` form is left untouched.
 //
+// When a placeholder is wrapped in matching ASCII double or single quotes
+// (e.g. `"${VAR}"` or `'${VAR}'`), the surrounding quote pair is consumed and
+// the substitution emits a properly-escaped YAML scalar — preventing values
+// that contain quote characters, backslashes, or newlines from breaking the
+// surrounding YAML structure. Unquoted placeholders substitute the raw value
+// (the user is responsible for legal YAML in that case).
+//
 // Unset variables without a default substitute to the empty string and emit
 // a single warning per occurrence so the operator notices the gap; defaults
 // substitute silently.
@@ -71,14 +79,14 @@ func expandEnv(input []byte) []byte {
 			i++
 			continue
 		}
-		// At a '$'. Decide what comes next.
+		// $$ → literal $
 		if i+1 < len(input) && input[i+1] == '$' {
 			out.WriteByte('$')
 			i += 2
 			continue
 		}
+		// Lone $ not followed by '{' is left verbatim.
 		if i+1 >= len(input) || input[i+1] != '{' {
-			// Lone $, not followed by '{' — leave verbatim.
 			out.WriteByte('$')
 			i++
 			continue
@@ -86,33 +94,75 @@ func expandEnv(input []byte) []byte {
 		// Find the closing '}'.
 		end := bytes.IndexByte(input[i+2:], '}')
 		if end < 0 {
-			// Unclosed placeholder — emit verbatim and stop scanning further.
 			out.Write(input[i:])
 			break
 		}
 		spec := string(input[i+2 : i+2+end])
-		i += 2 + end + 1
+		placeholderEnd := i + 2 + end + 1
 
 		name, def, hasDefault := parsePlaceholder(spec)
 		if name == "" {
-			// Malformed (e.g. `${}`) — emit verbatim to make the issue visible.
+			// Malformed (e.g. `${}`) — emit verbatim so the issue is visible.
 			out.WriteString("${")
 			out.WriteString(spec)
 			out.WriteByte('}')
+			i = placeholderEnd
 			continue
 		}
-		val, ok := os.LookupEnv(name)
-		switch {
-		case ok && val != "":
-			out.WriteString(val)
-		case hasDefault:
-			out.WriteString(def)
-		default:
+
+		// Resolve the value.
+		var value string
+		if v, ok := os.LookupEnv(name); ok && v != "" {
+			value = v
+		} else if hasDefault {
+			value = def
+		} else {
 			log.Printf("config: env var %q referenced by config.yaml but unset", name)
-			// substitute empty string
+			value = ""
+		}
+
+		// Detect surrounding quote context. The placeholder occupies
+		// input[i:placeholderEnd]; the byte already written to `out` is what
+		// precedes it. If that byte is a matching ASCII quote and the byte
+		// at placeholderEnd is the same quote, swallow the pair and emit a
+		// properly-escaped scalar.
+		quote := surroundingQuote(out.Bytes(), input, placeholderEnd)
+		switch quote {
+		case '"':
+			// Drop the trailing quote we already wrote, then emit a JSON-quoted
+			// string which is also a valid YAML double-quoted scalar.
+			out.Truncate(out.Len() - 1)
+			out.WriteString(strconv.Quote(value))
+			i = placeholderEnd + 1 // consume the closing quote too
+		case '\'':
+			out.Truncate(out.Len() - 1)
+			out.WriteByte('\'')
+			out.WriteString(strings.ReplaceAll(value, "'", "''"))
+			out.WriteByte('\'')
+			i = placeholderEnd + 1
+		default:
+			out.WriteString(value)
+			i = placeholderEnd
 		}
 	}
 	return out.Bytes()
+}
+
+// surroundingQuote inspects the byte written just before the placeholder and
+// the byte right after it, returning that byte iff both are the same ASCII
+// quote (`"` or `'`). Returns 0 otherwise.
+func surroundingQuote(written []byte, input []byte, afterEnd int) byte {
+	if len(written) == 0 || afterEnd >= len(input) {
+		return 0
+	}
+	last := written[len(written)-1]
+	if last != '"' && last != '\'' {
+		return 0
+	}
+	if input[afterEnd] != last {
+		return 0
+	}
+	return last
 }
 
 // parsePlaceholder splits the inside of a `${...}` form into (name, default, hasDefault).
