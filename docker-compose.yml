@@ -1,5 +1,5 @@
 services:
-  backend:
+  companion:
     build:
       context: .
       dockerfile: Dockerfile
@@ -23,6 +23,6 @@ services:
     ports:
       - "8080:80"
     depends_on:
-      backend:
+      companion:
         condition: service_healthy
     restart: unless-stopped
