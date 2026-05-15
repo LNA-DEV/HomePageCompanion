@@ -16,6 +16,10 @@ const (
 )
 
 func publishInstagramEntry(entry *gofeed.Item, target config.Target, caption string) error {
+	// Note: Instagram's Graph API fetches the image from entry.Image.URL itself
+	// (see instagramapi.CreateMediaContainer — image_url is a query parameter).
+	// Bytes never cross our process, so client-side downsizing (imageresize)
+	// doesn't apply here.
 	creationID, err := instagramapi.CreateMediaContainer(target.AccountId, target.AccessToken, entry.Image.URL, caption)
 	if err != nil {
 		return fmt.Errorf("create media container: %w", err)

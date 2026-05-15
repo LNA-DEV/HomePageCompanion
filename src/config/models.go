@@ -59,4 +59,9 @@ type Target struct {
 	Username    string `yaml:"username"`
 	AccessToken string `yaml:"accessToken"`
 	AccountId   string `yaml:"accountId"`
+
+	// MaxImageBytes / MaxImageLongEdge are optional per-instance image-prep
+	// overrides. 0 = use the platform default from imageresize.DefaultsForPlatform.
+	MaxImageBytes    int `yaml:"maxImageBytes,omitempty"`
+	MaxImageLongEdge int `yaml:"maxImageLongEdge,omitempty"`
 }

@@ -4,6 +4,7 @@ import (
 	"log"
 
 	"github.com/LNA-DEV/HomePageCompanion/config"
+	"github.com/LNA-DEV/HomePageCompanion/imageresize"
 	"github.com/LNA-DEV/HomePageCompanion/mastodonapi"
 	"github.com/mmcdole/gofeed"
 )
@@ -18,6 +19,11 @@ func publishMastodonEntry(entry *gofeed.Item, target config.Target, caption stri
 		imageBytes, err := downloadImage(entry.Image.URL)
 		if err != nil {
 			return err
+		}
+		if prepared, prepErr := imageresize.PrepareForTarget(imageBytes, resolveLimits(target)); prepErr != nil {
+			log.Printf("autouploader: mastodon image prep failed for %s, sending original: %v", entry.GUID, prepErr)
+		} else {
+			imageBytes = prepared
 		}
 		description := extractAltText(entry.Description)
 		media, err := mastodonapi.UploadMedia(target.InstanceUrl, target.PAT, imageBytes, description)

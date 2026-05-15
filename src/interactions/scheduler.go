@@ -1,6 +1,7 @@
 package interactions
 
 import (
+	"fmt"
 	"log"
 	"math"
 	"math/rand"
@@ -264,17 +265,22 @@ func refreshOne(p Pair) error {
 }
 
 func refreshRSSLike(p Pair) error {
+	// Load the actual AutoUploadItem row so the platform helpers see the
+	// stored PostUrl / PostId / VersionId. Earlier this function passed a
+	// stub item with only ItemID + Platform set, which made every handler
+	// short-circuit with "missing PostID" / "post URL or version ID is nil"
+	// even for rows whose ids were correctly persisted.
+	var item models.AutoUploadItem
+	if err := database.Db.
+		Where("item_id = ? AND platform = ?", p.ItemID, p.Platform).
+		First(&item).Error; err != nil {
+		return fmt.Errorf("rss like: load item %s/%s: %w", p.Platform, p.ItemID, err)
+	}
+
 	cfg := DefaultRetryConfig()
 
 	var likeCount int
 	var fetchErr error
-
-	// We only need the target's identity to thread through the platform
-	// helpers; reconstruct the matching AutoUploadItem shape they expect.
-	item := models.AutoUploadItem{
-		ItemID:   p.ItemID,
-		Platform: p.Platform,
-	}
 
 	switch p.Platform {
 	case "bluesky":

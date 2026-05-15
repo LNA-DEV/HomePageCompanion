@@ -71,6 +71,27 @@ func parseStatus(s string) int {
 }
 
 func classifyError(status int, msg string) string {
+	lower := strings.ToLower(msg)
+
+	// Message-based detection runs first because some servers — notably
+	// Pixelfed (Laravel default) — return 500 for genuine auth failures
+	// with bodies like {"error":"Unauthenticated."}. Trusting the status
+	// alone would misclassify those as `server`.
+	switch {
+	case strings.Contains(lower, "unauth"), // unauthorized | unauthenticated
+		strings.Contains(lower, "invalid token"),
+		strings.Contains(lower, "expired"),
+		strings.Contains(lower, "forbidden"),
+		strings.Contains(lower, "authentication"):
+		return "auth"
+	case strings.Contains(lower, "rate limit"), strings.Contains(lower, "too many"):
+		return "rate_limited"
+	case strings.Contains(lower, "no such host"), strings.Contains(lower, "timeout"),
+		strings.Contains(lower, "connection refused"), strings.Contains(lower, "i/o timeout"):
+		return "network"
+	}
+
+	// Fall back to HTTP status codes.
 	switch status {
 	case http.StatusUnauthorized, http.StatusForbidden:
 		return "auth"
@@ -79,18 +100,6 @@ func classifyError(status int, msg string) string {
 	}
 	if status >= 500 && status < 600 {
 		return "server"
-	}
-	lower := strings.ToLower(msg)
-	switch {
-	case strings.Contains(lower, "unauthor"), strings.Contains(lower, "invalid token"),
-		strings.Contains(lower, "expired"), strings.Contains(lower, "forbidden"),
-		strings.Contains(lower, "authentication"):
-		return "auth"
-	case strings.Contains(lower, "rate limit"), strings.Contains(lower, "too many"):
-		return "rate_limited"
-	case strings.Contains(lower, "no such host"), strings.Contains(lower, "timeout"),
-		strings.Contains(lower, "connection refused"), strings.Contains(lower, "i/o timeout"):
-		return "network"
 	}
 	if status >= 400 && status < 500 {
 		return "client"

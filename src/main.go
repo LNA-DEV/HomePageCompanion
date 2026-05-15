@@ -146,15 +146,22 @@ func uploadNext(c *gin.Context) {
 	connectionName := c.Param("connectionName")
 
 	var connection config.Connection
+	found := false
 
 	for _, item := range config.Data.Connections {
 		if item.Name == connectionName {
 			connection = item
+			found = true
 			break
 		}
 	}
+	if !found {
+		c.JSON(http.StatusNotFound, gin.H{"error": "unknown connection: " + connectionName})
+		return
+	}
 
-	autouploader.Publish(connection)
+	go autouploader.Publish(connection)
+	c.JSON(http.StatusAccepted, gin.H{"status": "publish scheduled", "connection": connectionName})
 }
 
 func health(c *gin.Context) {
