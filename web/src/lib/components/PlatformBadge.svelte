@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { Cloud, Camera, Image, Send, Heart, AtSign } from 'lucide-svelte';
+	import { Cloud, Camera, Image, Send, Heart, AtSign, MessagesSquare } from 'lucide-svelte';
 	import { platformColor } from '$lib/utils';
 
 	interface Props {
@@ -21,6 +21,8 @@
 				return Image;
 			case 'mastodon':
 				return AtSign;
+			case 'threads':
+				return MessagesSquare;
 			case 'native':
 				return Heart;
 			default:

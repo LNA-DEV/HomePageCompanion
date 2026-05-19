@@ -76,6 +76,8 @@ func Publish(connection config.Connection) {
 		err = publishBlueskyEntry(entry, target, caption)
 	case "mastodon":
 		err = publishMastodonEntry(entry, target, caption)
+	case "threads":
+		err = publishThreadsEntry(entry, target, caption)
 	default:
 		log.Printf("Unknown platform %q for connection %q", target.Platform, connection.Name)
 		return
@@ -121,6 +123,8 @@ func captionLimitFor(platform string) int {
 	switch platform {
 	case "bluesky":
 		return 300
+	case "threads":
+		return 500
 	default:
 		return 2000
 	}

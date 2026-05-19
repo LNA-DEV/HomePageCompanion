@@ -18,6 +18,7 @@ import (
 	"github.com/LNA-DEV/HomePageCompanion/database"
 	"github.com/LNA-DEV/HomePageCompanion/mastodonapi"
 	"github.com/LNA-DEV/HomePageCompanion/models"
+	"github.com/LNA-DEV/HomePageCompanion/threadsapi"
 	"gorm.io/gorm"
 )
 
@@ -128,6 +129,8 @@ func publishOnce(post *models.MicroblogPost, pub *models.MicroblogPublication, t
 		result, err = publishToMastodon(post, target)
 	case "bluesky":
 		result, err = publishToBluesky(post, target)
+	case "threads":
+		result, err = publishToThreads(post, target)
 	default:
 		err = fmt.Errorf("microblog: unsupported platform %q", target.Platform)
 	}
@@ -228,6 +231,63 @@ func publishToBluesky(post *models.MicroblogPost, target config.Target) (*publis
 	}, nil
 }
 
+// publishToThreads creates a Threads media container (IMAGE when the post
+// carries an image URL, TEXT otherwise), polls its status to FINISHED, then
+// publishes. Threads has no native content-warning concept, so the CW is
+// prepended to the body the same way publishToBluesky does. The returned
+// publishResult carries the Threads permalink + media id.
+func publishToThreads(post *models.MicroblogPost, target config.Target) (*publishResult, error) {
+	body := post.Body
+	if strings.TrimSpace(post.ContentWarning) != "" {
+		body = "CW: " + post.ContentWarning + "\n\n" + body
+	}
+
+	var (
+		creationID string
+		err        error
+	)
+	if strings.TrimSpace(post.ImageURL) != "" {
+		creationID, err = threadsapi.CreateImageContainer(target.AccountId, target.AccessToken, post.ImageURL, body)
+	} else {
+		creationID, err = threadsapi.CreateTextContainer(target.AccountId, target.AccessToken, body)
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	const (
+		maxPolls = 10
+		pollGap  = 2 * time.Second
+	)
+	var status string
+	var statusErr error
+	for i := 0; i < maxPolls; i++ {
+		status, statusErr = threadsapi.CheckMediaStatus(creationID, target.AccessToken)
+		if statusErr == nil && status == "FINISHED" {
+			break
+		}
+		time.Sleep(pollGap)
+	}
+	if status != "FINISHED" {
+		if statusErr != nil {
+			return nil, fmt.Errorf("threads media not ready: %w", statusErr)
+		}
+		return nil, fmt.Errorf("threads media not ready (last status: %q)", status)
+	}
+
+	mediaID, err := threadsapi.PublishContainer(target.AccountId, target.AccessToken, creationID)
+	if err != nil {
+		return nil, err
+	}
+
+	permalink, permErr := threadsapi.GetPermalink(mediaID, target.AccessToken)
+	if permErr != nil {
+		log.Printf("microblog: threads permalink fetch for %s failed: %v", mediaID, permErr)
+	}
+
+	return &publishResult{URL: permalink, StatusID: mediaID}, nil
+}
+
 // Retry re-runs the platform call for an existing publication row. If the
 // publication already succeeded it returns an error rather than wasting an
 // API call.
@@ -284,6 +344,10 @@ func Delete(postID uint) error {
 			}
 			if err := blueskyapi.DeleteRecord(session, *pub.ExternalID); err != nil {
 				log.Printf("microblog: bluesky delete on %s failed: %v", pub.TargetName, err)
+			}
+		case "threads":
+			if err := threadsapi.DeleteMedia(*pub.ExternalID, target.AccessToken); err != nil && !errors.Is(err, threadsapi.ErrNotFound) {
+				log.Printf("microblog: threads delete on %s failed: %v", pub.TargetName, err)
 			}
 		default:
 			log.Printf("microblog: no remote-delete implementation for platform %q", pub.Platform)

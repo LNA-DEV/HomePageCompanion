@@ -17,6 +17,7 @@ const PLATFORM_COLORS: Record<string, string> = {
 	bluesky: 'bg-sky-100 text-sky-700 dark:bg-sky-900/40 dark:text-sky-200',
 	instagram: 'bg-pink-100 text-pink-700 dark:bg-pink-900/40 dark:text-pink-200',
 	mastodon: 'bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-200',
+	threads: 'bg-zinc-900 text-zinc-100 dark:bg-zinc-800 dark:text-zinc-100',
 	twitter: 'bg-slate-200 text-slate-800 dark:bg-slate-700 dark:text-slate-100',
 	native: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-200'
 };

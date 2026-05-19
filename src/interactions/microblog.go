@@ -12,6 +12,7 @@ import (
 	"github.com/LNA-DEV/HomePageCompanion/database"
 	"github.com/LNA-DEV/HomePageCompanion/mastodonapi"
 	"github.com/LNA-DEV/HomePageCompanion/models"
+	"github.com/LNA-DEV/HomePageCompanion/threadsapi"
 )
 
 // refreshMicroblogLike pulls the like count for a federated microblog
@@ -60,6 +61,21 @@ func refreshMicroblogLike(p Pair) error {
 		pub.LikesRefreshedAt = &now
 		database.Db.Save(pub)
 		return upsertInteraction("microblog", p.ItemID, pub.Platform, pub.TargetName, len(resp.Likes))
+	case "threads":
+		count, e := RetryWithBackoff(cfg, func() (int, error) {
+			c, err := threadsapi.MediaLikeCount(*pub.ExternalID, target.AccessToken)
+			if errors.Is(err, threadsapi.ErrRateLimited) {
+				return 0, ErrRateLimited
+			}
+			return c, err
+		})
+		if e != nil {
+			return e
+		}
+		now := time.Now()
+		pub.LikesRefreshedAt = &now
+		database.Db.Save(pub)
+		return upsertInteraction("microblog", p.ItemID, pub.Platform, pub.TargetName, count)
 	default:
 		return fmt.Errorf("microblog likes: unsupported platform %q", pub.Platform)
 	}
@@ -168,9 +184,61 @@ func refreshMicroblogComments(p Pair) error {
 		pub.CommentsRefreshedAt = &now
 		database.Db.Save(pub)
 		return nil
+	case "threads":
+		replies, e := RetryWithBackoff(cfg, func() ([]threadsapi.Reply, error) {
+			r, err := threadsapi.ListReplies(*pub.ExternalID, target.AccessToken)
+			if errors.Is(err, threadsapi.ErrRateLimited) {
+				return nil, ErrRateLimited
+			}
+			return r, err
+		})
+		if e != nil {
+			return e
+		}
+		for _, r := range replies {
+			c := models.MicroblogComment{
+				PostID:     pub.PostID,
+				Platform:   "threads",
+				ExternalID: r.ID,
+				Author:     r.From.Username,
+				AuthorURL:  threadsProfileURL(r.From.Username),
+				AvatarURL:  "",
+				Body:       r.Text,
+				PostedAt:   r.Timestamp,
+				ImportedAt: time.Now(),
+			}
+			var existing models.MicroblogComment
+			err := database.Db.
+				Where("platform = ? AND external_id = ?", c.Platform, c.ExternalID).
+				First(&existing).Error
+			if err == nil {
+				existing.Author = c.Author
+				existing.AuthorURL = c.AuthorURL
+				existing.AvatarURL = c.AvatarURL
+				existing.Body = c.Body
+				existing.ImportedAt = c.ImportedAt
+				database.Db.Save(&existing)
+			} else {
+				database.Db.Create(&c)
+			}
+		}
+		now := time.Now()
+		pub.CommentsRefreshedAt = &now
+		database.Db.Save(pub)
+		return nil
 	default:
 		return fmt.Errorf("microblog comments: unsupported platform %q", pub.Platform)
 	}
+}
+
+// threadsProfileURL builds the public Threads profile URL for a username.
+// Threads doesn't return an author URL on the replies endpoint, so we
+// construct it from the handle the same way the Bluesky path does.
+func threadsProfileURL(username string) string {
+	if username == "" {
+		return ""
+	}
+	return "https://www.threads.net/@" + username
 }
 
 // translateBluesky converts blueskyapi.ErrRateLimited into the interactions

@@ -37,6 +37,11 @@ targets:
     instance: ${MASTODON_INSTANCE}
     pat: ${MASTODON_PAT}
 
+  - name: main-threads
+    platform: threads
+    accessToken: ${THREADS_ACCESS_TOKEN}
+    accountId: ${THREADS_USER_ID}
+
 connections:
   - name: pixelfed
     sourceName: Photo RSS
@@ -54,9 +59,13 @@ connections:
     sourceName: Photo RSS
     targetName: main-mastodon
     caption: "More at https://example.com/gallery"
+  - name: threads
+    sourceName: Photo RSS
+    targetName: main-threads
+    caption: "More at https://example.com/gallery"
 
 microblog:
-  publishTo: [main-mastodon, main-bluesky]
+  publishTo: [main-mastodon, main-bluesky, main-threads]
 
 webpush:
   subscriberMail: ${WEBPUSH_SUBSCRIBER_MAIL:-mailto:admin@example.com}

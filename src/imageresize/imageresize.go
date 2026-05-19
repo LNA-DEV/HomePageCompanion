@@ -47,6 +47,11 @@ func DefaultsForPlatform(platform string) Limits {
 	case "pixelfed":
 		// Pixelfed instances commonly allow 15 MB; some allow 50 MB.
 		return Limits{MaxBytes: 14_000_000, MaxLongEdge: 4096}
+	case "threads":
+		// Threads fetches images by URL (no bytes uploaded by us), so these
+		// caps are documentary — they describe what Threads itself accepts
+		// when it pulls the image: 8 MB JPEG/PNG/HEIC, max 1920 px long edge.
+		return Limits{MaxBytes: 8_000_000, MaxLongEdge: 1920}
 	}
 	return Limits{}
 }

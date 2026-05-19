@@ -323,6 +323,16 @@ func refreshRSSLike(p Pair) error {
 			likeCount = result.LikeCount
 		}
 
+	case "threads":
+		result, e := RetryWithBackoff(cfg, func() (*ThreadsLikesResponse, error) {
+			return handleThreadsLikes(item, p.TargetName)
+		})
+		if e != nil {
+			fetchErr = e
+		} else {
+			likeCount = result.LikeCount
+		}
+
 	default:
 		return nil
 	}
