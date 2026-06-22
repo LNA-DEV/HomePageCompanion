@@ -6,3 +6,5 @@ export { default as Modal } from './Modal.svelte';
 export { default as Loading } from './Loading.svelte';
 export { default as SearchInput } from './SearchInput.svelte';
 export { default as PlatformBadge } from './PlatformBadge.svelte';
+export { default as LocationPicker } from './LocationPicker.svelte';
+export { default as RoutePicker } from './RoutePicker.svelte';

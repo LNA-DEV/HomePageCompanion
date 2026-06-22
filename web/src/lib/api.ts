@@ -283,6 +283,53 @@ class ApiClient {
 	async getMicroblogComments(slug: string): Promise<MicroblogComment[]> {
 		return this.request<MicroblogComment[]>(`/microblog/posts/${slug}/comments`);
 	}
+
+	// Trips (admin)
+	async getTrips(): Promise<{ items: TripListItem[] }> {
+		return this.request<{ items: TripListItem[] }>('/admin/trips');
+	}
+
+	async getTrip(id: number): Promise<Trip> {
+		return this.request<Trip>(`/admin/trips/${id}`);
+	}
+
+	async createTrip(payload: { title: string; slug?: string }): Promise<Trip> {
+		return this.request<Trip>('/admin/trips', {
+			method: 'POST',
+			body: JSON.stringify(payload)
+		});
+	}
+
+	async updateTrip(id: number, payload: TripUpdate): Promise<Trip> {
+		return this.request<Trip>(`/admin/trips/${id}`, {
+			method: 'PUT',
+			body: JSON.stringify(payload)
+		});
+	}
+
+	async deleteTrip(id: number): Promise<void> {
+		await this.request(`/admin/trips/${id}`, { method: 'DELETE' });
+	}
+
+	async uploadTripImage(file: File): Promise<{ url: string; size: number }> {
+		const form = new FormData();
+		form.append('file', file);
+		const headers: Record<string, string> = {};
+		if (this.apiKey) headers['Authorization'] = `ApiKey ${this.apiKey}`;
+		const resp = await fetch(`${API_BASE}/admin/trips/upload`, {
+			method: 'POST',
+			headers,
+			body: form
+		});
+		if (resp.status === 401) {
+			this.clearApiKey();
+			throw new Error('Unauthorized');
+		}
+		if (!resp.ok) {
+			throw new Error(`Upload failed: ${resp.status}`);
+		}
+		return resp.json();
+	}
 }
 
 export const api = new ApiClient();
@@ -529,6 +576,66 @@ export interface PublicMicroblogPost {
 	likeCount: number;
 	commentCount: number;
 	publications: { platform: string; targetName: string; postUrl?: string }[];
+}
+
+// Trips ---------------------------------------------------------------------
+export type TripStatus = 'visited' | 'current' | 'upcoming';
+export type TransportMode = '' | 'train' | 'flight' | 'car';
+
+export interface TripPhoto {
+	url: string;
+	caption: string;
+	alt: string;
+	tint: string;
+}
+
+// An intermediate point along a transport leg's route — not a stop, just
+// geometry the public site draws the trail through.
+export interface TripWaypoint {
+	lat: number;
+	lng: number;
+}
+
+export interface TripStop {
+	stopKey: string;
+	name: string;
+	startDate: string;
+	endDate: string;
+	lat: number;
+	lng: number;
+	status: TripStatus;
+	note: string;
+	country: string;
+	transportMode: TransportMode;
+	transportLabel: string;
+	transportDuration: string;
+	distanceKm: number | null;
+	transportCountries: string[];
+	transportWaypoints: TripWaypoint[];
+	photos: TripPhoto[];
+	transportPhotos: TripPhoto[];
+}
+
+export interface Trip {
+	id: number;
+	slug: string;
+	title: string;
+	published: boolean;
+	// The only manual stat — the planned trip length. All others (daysElapsed,
+	// cities, countries, distance) are derived from the stops by the backend.
+	daysTotal: number | null;
+	stops: TripStop[];
+}
+
+// The PUT payload — same as Trip minus the server-assigned id.
+export type TripUpdate = Omit<Trip, 'id'>;
+
+export interface TripListItem {
+	id: number;
+	slug: string;
+	title: string;
+	published: boolean;
+	stopCount: number;
 }
 
 export type TargetHealthStatus = 'healthy' | 'degraded' | 'down' | 'unknown';

@@ -7,9 +7,12 @@
 		onClose: () => void;
 		children: Snippet;
 		actions?: Snippet;
+		size?: 'md' | 'lg' | 'xl';
 	}
 
-	let { open, title, onClose, children, actions }: Props = $props();
+	let { open, title, onClose, children, actions, size = 'md' }: Props = $props();
+
+	const widthClass = $derived({ md: 'max-w-md', lg: 'max-w-2xl', xl: 'max-w-4xl' }[size]);
 
 	function handleBackdropClick(e: MouseEvent) {
 		if (e.target === e.currentTarget) {
@@ -36,7 +39,7 @@
 		aria-modal="true"
 		tabindex="-1"
 	>
-		<div class="bg-white dark:bg-gray-900 rounded-lg shadow-xl max-w-md w-full">
+		<div class="bg-white dark:bg-gray-900 rounded-lg shadow-xl {widthClass} w-full max-h-[90vh] overflow-y-auto">
 			<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-800 flex items-center justify-between">
 				<h2 class="text-lg font-semibold text-gray-900 dark:text-white">{title}</h2>
 				<button

@@ -47,7 +47,7 @@ func main() {
 	// Data migrations (must run before schema AutoMigrate so column renames are applied first)
 	database.RunMigrations()
 
-	database.MigrateModels([]interface{}{models.Webmention{}, models.AutoUploadItem{}, models.VAPIDKey{}, models.NotificationSubscription{}, models.Feed{}, models.FeedItem{}, models.Author{}, models.Category{}, models.Interaction{}, models.NativeLike{}, models.UploadAttempt{}, models.MicroblogPost{}, models.MicroblogPublication{}, models.MicroblogComment{}})
+	database.MigrateModels([]interface{}{models.Webmention{}, models.AutoUploadItem{}, models.VAPIDKey{}, models.NotificationSubscription{}, models.Feed{}, models.FeedItem{}, models.Author{}, models.Category{}, models.Interaction{}, models.NativeLike{}, models.UploadAttempt{}, models.MicroblogPost{}, models.MicroblogPublication{}, models.MicroblogComment{}, models.Trip{}, models.TripStop{}, models.TripPhoto{}})
 
 	// Inventory
 	inventory.PopulateDatabase()
@@ -114,6 +114,9 @@ func main() {
 
 	// Microblog routes (both admin and public sub-trees)
 	admin.RegisterMicroblogRoutes(api, validateAPIKey())
+
+	// Trip routes (both admin and public sub-trees)
+	admin.RegisterTripRoutes(api, validateAPIKey())
 
 	// Health check
 	router.GET("/health", health)

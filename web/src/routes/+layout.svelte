@@ -19,7 +19,8 @@
 		Menu,
 		ScrollText,
 		AlertTriangle,
-		PenSquare
+		PenSquare,
+		Map
 	} from 'lucide-svelte';
 
 	interface NavItem {
@@ -31,6 +32,7 @@
 	const navItems: NavItem[] = [
 		{ href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
 		{ href: '/microblog', label: 'Microblog', icon: PenSquare },
+		{ href: '/trips', label: 'Trips', icon: Map },
 		{ href: '/feeds', label: 'Feeds', icon: Rss },
 		{ href: '/publications', label: 'Publications', icon: Send },
 		{ href: '/uploads', label: 'Uploads', icon: AlertTriangle },
