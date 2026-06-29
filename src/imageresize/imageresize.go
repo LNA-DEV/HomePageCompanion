@@ -28,6 +28,12 @@ import (
 type Limits struct {
 	MaxBytes    int
 	MaxLongEdge int
+
+	// ForceReencode requires a full decode + JPEG re-encode even when the
+	// input already fits both caps. Used to guarantee metadata (EXIF/GPS) is
+	// stripped from stored images. Zero value (false) preserves the
+	// fast-path passthrough used by the publish targets.
+	ForceReencode bool
 }
 
 // DefaultsForPlatform returns the baked-in defaults for the well-known
@@ -70,7 +76,7 @@ func DefaultsForPlatform(platform string) Limits {
 // error so the caller can choose to upload the original and let the
 // platform produce the authoritative error.
 func PrepareForTarget(input []byte, lim Limits) ([]byte, error) {
-	if lim.MaxBytes == 0 && lim.MaxLongEdge == 0 {
+	if lim.MaxBytes == 0 && lim.MaxLongEdge == 0 && !lim.ForceReencode {
 		return input, nil
 	}
 
@@ -89,7 +95,7 @@ func PrepareForTarget(input []byte, lim Limits) ([]byte, error) {
 	needsResize := lim.MaxLongEdge > 0 && longEdge > lim.MaxLongEdge
 	needsReencode := lim.MaxBytes > 0 && len(input) > lim.MaxBytes
 
-	if !needsResize && !needsReencode && format == "jpeg" {
+	if !needsResize && !needsReencode && !lim.ForceReencode && format == "jpeg" {
 		return input, nil
 	}
 

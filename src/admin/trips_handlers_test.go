@@ -3,6 +3,10 @@ package admin
 import (
 	"bytes"
 	"encoding/json"
+	"image"
+	"image/color"
+	_ "image/jpeg"
+	"image/png"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
@@ -285,5 +289,64 @@ func TestTripUploadAndMediaTraversalGuard(t *testing.T) {
 	w = do(t, r, http.MethodGet, "/api/trips/media/..%2f..%2fconfig.yaml", "", nil)
 	if w.Code != http.StatusBadRequest && w.Code != http.StatusNotFound {
 		t.Fatalf("traversal should be blocked, got %d", w.Code)
+	}
+}
+
+// TestTripUploadTransformsToJPEGAndCapsDimensions verifies a decodable image is
+// re-encoded to JPEG (which strips EXIF/IPTC/XMP metadata, incl. GPS) and that
+// the long edge is capped at 4096px.
+func TestTripUploadTransformsToJPEGAndCapsDimensions(t *testing.T) {
+	r := setupTripTest(t)
+
+	// A real PNG wider than the 4096px cap, exercising both the
+	// metadata-stripping re-encode and the resize.
+	src := image.NewRGBA(image.Rect(0, 0, 5000, 100))
+	for x := range 5000 {
+		src.Set(x, 0, color.RGBA{R: uint8(x % 256), A: 255})
+	}
+	var pngBuf bytes.Buffer
+	if err := png.Encode(&pngBuf, src); err != nil {
+		t.Fatalf("encode source png: %v", err)
+	}
+
+	var body bytes.Buffer
+	mw := multipart.NewWriter(&body)
+	fw, _ := mw.CreateFormFile("file", "trip.png")
+	fw.Write(pngBuf.Bytes())
+	mw.Close()
+
+	req := httptest.NewRequest(http.MethodPost, "/api/admin/trips/upload", &body)
+	req.Header.Set("Authorization", testTripKey)
+	req.Header.Set("Content-Type", mw.FormDataContentType())
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("upload: expected 200, got %d (%s)", w.Code, w.Body.String())
+	}
+	var up struct {
+		URL  string `json:"url"`
+		Size int    `json:"size"`
+	}
+	decode(t, w, &up)
+
+	// A PNG input must come back as a re-encoded .jpg.
+	if filepath.Ext(up.URL) != ".jpg" {
+		t.Fatalf("expected transformed .jpg url, got %q", up.URL)
+	}
+
+	// The stored file decodes as JPEG and is capped at 4096px on the long edge.
+	raw, err := os.ReadFile(filepath.Join(tripMediaDir, filepath.Base(up.URL)))
+	if err != nil {
+		t.Fatalf("read stored file: %v", err)
+	}
+	img, format, err := image.Decode(bytes.NewReader(raw))
+	if err != nil {
+		t.Fatalf("decode stored file: %v", err)
+	}
+	if format != "jpeg" {
+		t.Fatalf("stored file format = %q, want jpeg", format)
+	}
+	if got := img.Bounds().Dx(); got != 4096 {
+		t.Fatalf("long edge not capped: width = %d, want 4096", got)
 	}
 }

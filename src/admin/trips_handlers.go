@@ -14,13 +14,19 @@ import (
 	"time"
 
 	"github.com/LNA-DEV/HomePageCompanion/database"
+	"github.com/LNA-DEV/HomePageCompanion/imageresize"
 	"github.com/LNA-DEV/HomePageCompanion/models"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
 
 const tripMediaDir = "data/trips"
-const tripMaxImageBytes = 12 << 20 // 12 MiB
+const tripMaxImageBytes = 30 << 20 // 30 MiB — generous so large phone photos (e.g. 50MP) reach the transform
+
+// tripImageLimits transforms every (decodable) trip upload: re-encode to
+// JPEG to strip EXIF/IPTC/XMP metadata (incl. GPS location) and cap the
+// long edge at 4096px. No byte cap → quality stays at 95.
+var tripImageLimits = imageresize.Limits{MaxLongEdge: 4096, ForceReencode: true}
 
 // RegisterTripRoutes wires both the admin (auth-protected) and public (open)
 // trip endpoints. Mirrors RegisterMicroblogRoutes — admin writes require the
@@ -334,16 +340,23 @@ func UploadTripImage(c *gin.Context) {
 		return
 	}
 
+	ext := filepath.Ext(header.Filename)
+	if ext == "" {
+		ext = ".bin"
+	}
+	// Strip metadata + bound dimensions by re-encoding. On decode failure
+	// (e.g. HEIC, non-image) keep the original bytes and extension.
+	if processed, perr := imageresize.PrepareForTarget(data, tripImageLimits); perr == nil {
+		data = processed
+		ext = ".jpg"
+	}
+
 	if err := os.MkdirAll(tripMediaDir, 0o755); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not create media dir"})
 		return
 	}
 	sum := sha256.Sum256(data)
 	sha := hex.EncodeToString(sum[:])
-	ext := filepath.Ext(header.Filename)
-	if ext == "" {
-		ext = ".bin"
-	}
 	path := filepath.Join(tripMediaDir, sha+ext)
 	if _, statErr := os.Stat(path); errors.Is(statErr, os.ErrNotExist) {
 		if err := os.WriteFile(path, data, 0o644); err != nil {
