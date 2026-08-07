@@ -64,7 +64,7 @@ func Publish(connection config.Connection) {
 		}
 	}
 
-	caption := BuildCaption(connection, entry, feed, imageBytes, captionLimitFor(target.Platform))
+	caption := BuildCaption(connection, entry, feed, imageBytes, captionLimitFor(target.Platform), maxHashtagsFor(target.Platform))
 
 	var err error
 	switch target.Platform {
@@ -127,6 +127,18 @@ func captionLimitFor(platform string) int {
 		return 500
 	default:
 		return 2000
+	}
+}
+
+// maxHashtagsFor returns the per-platform hashtag cap used by BuildCaption
+// (0 = unlimited). Threads indexes only one topic tag per post and shows every
+// additional #tag as dead, non-clickable text, so it is capped at 1.
+func maxHashtagsFor(platform string) int {
+	switch platform {
+	case "threads":
+		return 1
+	default:
+		return 0
 	}
 }
 

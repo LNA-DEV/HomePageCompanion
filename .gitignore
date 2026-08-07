@@ -45,3 +45,4 @@ src/cmd/migrate-guids/main.go
 src/data/logs/**
 src/data/microblog/**
 src/data/trips/**
+.inbox/**

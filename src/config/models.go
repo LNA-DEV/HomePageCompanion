@@ -31,6 +31,12 @@ type Connection struct {
 	Caption    string  `yaml:"caption"`
 	Cron       *string `yaml:"cron"`
 
+	// IncludeAltText injects the image's alt text (parsed from the RSS item's
+	// description) into the post body. Defaults to false. When set alongside a
+	// non-empty Caption, the alt text is placed first, then the caption. To
+	// omit the caption entirely, simply leave Caption empty.
+	IncludeAltText bool `yaml:"includeAltText,omitempty"`
+
 	// RoutingTagsSource selects where to look for meta_skip:<platform> /
 	// meta_only:<platform> routing tags. Empty (default) disables routing.
 	// Allowed values: "" | "rss" | "exif".

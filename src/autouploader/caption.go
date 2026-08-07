@@ -12,7 +12,7 @@ import (
 // BuildCaption composes the final caption for a publish. Sections are joined
 // by blank lines:
 //
-//	<connection.Caption>
+//	<base text: image alt text and/or connection.Caption — see buildBaseText>
 //	<hashtags from entry.Categories, excluding meta_* tags>
 //	<optional EXIF line>
 //	<optional copyright line>
@@ -20,15 +20,22 @@ import (
 // When the resulting caption exceeds maxLen, optional sections are dropped in
 // reverse priority order (copyright → EXIF → trailing hashtags) until it fits.
 //
+// maxHashtags caps how many hashtags are emitted (0 = unlimited). Threads
+// indexes only a single topic tag per post and renders every extra #tag as
+// dead, non-clickable clutter, so the Threads path passes 1.
+//
 // imageBytes may be nil when no EXIF/copyright-from-exif feature is enabled.
 // feed may be nil when no copyright-from-rss feature is enabled.
-func BuildCaption(conn config.Connection, entry *gofeed.Item, feed *gofeed.Feed, imageBytes []byte, maxLen int) string {
+func BuildCaption(conn config.Connection, entry *gofeed.Item, feed *gofeed.Feed, imageBytes []byte, maxLen, maxHashtags int) string {
 	if maxLen <= 0 {
 		maxLen = 2000
 	}
 
-	base := strings.TrimSpace(conn.Caption)
+	base := buildBaseText(conn, entry)
 	hashtags := buildHashtags(entry)
+	if maxHashtags > 0 && len(hashtags) > maxHashtags {
+		hashtags = hashtags[:maxHashtags]
+	}
 	exifLine := ""
 	copyrightLine := ""
 
@@ -100,6 +107,29 @@ func BuildCaption(conn config.Connection, entry *gofeed.Item, feed *gofeed.Feed,
 		return string(runes[:maxLen])
 	}
 	return base
+}
+
+// buildBaseText composes the leading text block of a caption. The configured
+// Caption is always included when non-empty; when IncludeAltText is set, the
+// image alt text (parsed from the RSS item) is prepended above it. Sections are
+// separated by a blank line to match the rest of BuildCaption's layout.
+//
+// To publish without a caption, leave Caption empty — there is no separate
+// toggle for it.
+func buildBaseText(conn config.Connection, entry *gofeed.Item) string {
+	parts := make([]string, 0, 2)
+
+	if conn.IncludeAltText && entry != nil {
+		if alt := strings.TrimSpace(extractAltText(entry.Description)); alt != "" {
+			parts = append(parts, alt)
+		}
+	}
+
+	if caption := strings.TrimSpace(conn.Caption); caption != "" {
+		parts = append(parts, caption)
+	}
+
+	return strings.Join(parts, "\n\n")
 }
 
 // buildHashtags converts entry.Categories into `#tag` strings, skipping any
