@@ -311,6 +311,36 @@ class ApiClient {
 		await this.request(`/admin/trips/${id}`, { method: 'DELETE' });
 	}
 
+	// Trip routes (computed server-side, delivered to the site as transportIn.geometry)
+	async getRouteStats(): Promise<RouteStats> {
+		return this.request<RouteStats>('/admin/routes');
+	}
+
+	async backfillRoutes(force = false): Promise<{ queued: number }> {
+		return this.request<{ queued: number }>(`/admin/routes/backfill${force ? '?force=1' : ''}`, {
+			method: 'POST'
+		});
+	}
+
+	async recomputeRoute(key: string): Promise<void> {
+		await this.request(`/admin/routes/${key}/recompute`, { method: 'POST' });
+	}
+
+	// Basemap (self-hosted vector tiles)
+	async getBasemap(): Promise<BasemapStatus> {
+		return this.request<BasemapStatus>('/admin/basemap');
+	}
+
+	async startBasemapUpdate(): Promise<void> {
+		await this.request('/admin/basemap/update', { method: 'POST' });
+	}
+
+	async basemapCleanup(): Promise<{ deleted: number; aborted: number }> {
+		return this.request<{ deleted: number; aborted: number }>('/admin/basemap/cleanup', {
+			method: 'POST'
+		});
+	}
+
 	async uploadTripImage(file: File): Promise<{ url: string; size: number }> {
 		const form = new FormData();
 		form.append('file', file);
@@ -614,6 +644,69 @@ export interface TripStop {
 	transportWaypoints: TripWaypoint[];
 	photos: TripPhoto[];
 	transportPhotos: TripPhoto[];
+	// Read-only: whether the companion has computed the leg's route. Absent for
+	// the first stop, flights and stops without a transport mode.
+	route?: TripRoute;
+}
+
+export interface TripRoute {
+	key: string;
+	status: 'ok' | 'failed' | 'pending';
+	source?: string;
+	error?: string;
+}
+
+export interface RouteStats {
+	ok: number;
+	failed: number;
+	pending: number;
+}
+
+export interface BasemapVersion {
+	id: number;
+	version: string;
+	key: string;
+	size: number;
+	sourceUrl: string;
+	schemaVersion: string;
+	osmTime: string;
+	status: 'copying' | 'verifying' | 'active' | 'retained' | 'deleted' | 'failed';
+	partSize: number;
+	partsTotal: number;
+	error?: string;
+	createdAt: string;
+	updatedAt: string;
+	activatedAt?: string;
+	deleteAfter?: string;
+}
+
+export interface BasemapProgress {
+	version: string;
+	phase: string;
+	partsDone: number;
+	partsTotal: number;
+	bytesDone: number;
+	bytesTotal: number;
+	bytesThisRun: number;
+	startedAt: string;
+}
+
+export interface BasemapStatus {
+	enabled: boolean;
+	bucket?: string;
+	prefix?: string;
+	source?: string;
+	schedule?: string;
+	publicUrl?: string;
+	retainDays?: number;
+	active?: string;
+	job?: {
+		running: boolean;
+		progress?: BasemapProgress;
+		lastError?: string;
+		lastRun?: string;
+	};
+	versions?: BasemapVersion[];
 }
 
 export interface Trip {

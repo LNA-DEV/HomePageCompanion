@@ -16,6 +16,7 @@ import (
 	"github.com/LNA-DEV/HomePageCompanion/database"
 	"github.com/LNA-DEV/HomePageCompanion/imageresize"
 	"github.com/LNA-DEV/HomePageCompanion/models"
+	"github.com/LNA-DEV/HomePageCompanion/routing"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
@@ -114,6 +115,18 @@ type adminTripStopView struct {
 	TransportWaypoints []models.Waypoint `json:"transportWaypoints"`
 	Photos             []tripPhotoInput `json:"photos"`
 	TransportPhotos    []tripPhotoInput `json:"transportPhotos"`
+	// Route is the computed track of the leg into this stop; absent for the
+	// first stop, flights and stops without a transport mode.
+	Route *adminRouteView `json:"route,omitempty"`
+}
+
+// adminRouteView tells the editor whether a leg's route is computed. Status
+// is ok | failed | pending (queued, or not computed yet).
+type adminRouteView struct {
+	Key    string `json:"key"`
+	Status string `json:"status"`
+	Source string `json:"source,omitempty"`
+	Error  string `json:"error,omitempty"`
 }
 
 type adminTripView struct {
@@ -290,6 +303,9 @@ func UpdateTrip(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not save trip"})
 		return
 	}
+	// Route the legs that are new or changed in the background; the editor
+	// sees them as "pending" until the worker has been through them.
+	routing.EnqueueTrip(trip.ID)
 	c.JSON(http.StatusOK, hydrateAdminTrip(trip.ID))
 }
 
@@ -385,6 +401,10 @@ type publicTransport struct {
 	DistanceKm *int          `json:"distanceKm,omitempty"`
 	Countries  []string      `json:"countries,omitempty"`
 	Waypoints  []models.Waypoint `json:"waypoints,omitempty"`
+	// Geometry is the computed track [[lat, lng], …]; absent until the
+	// companion has routed the leg, and for flights. travel.js draws a
+	// straight line through the waypoints without it.
+	Geometry [][2]float64 `json:"geometry,omitempty"`
 	Photos     []publicPhoto `json:"photos"`
 }
 
@@ -462,8 +482,15 @@ func GetTripPublic(c *gin.Context) {
 	var stops []models.TripStop
 	database.Db.Where("trip_id = ?", trip.ID).Order("position ASC").Find(&stops)
 
+	legs := routing.LegsOf(stops)
+	legKeys := make([]string, 0, len(legs))
+	for _, l := range legs {
+		legKeys = append(legKeys, l.Key)
+	}
+	geometries := routing.Lookup(legKeys)
+
 	pubStops := make([]publicStop, 0, len(stops))
-	for _, s := range stops {
+	for i, s := range stops {
 		var photos []models.TripPhoto
 		database.Db.Where("stop_id = ?", s.ID).Order("position ASC").Find(&photos)
 
@@ -488,6 +515,9 @@ func GetTripPublic(c *gin.Context) {
 				Countries:  cleanCountries(s.TransportCountries),
 				Waypoints:  cleanWaypoints(s.TransportWaypoints),
 				Photos:     transportPhotos,
+			}
+			if leg, ok := legs[i]; ok {
+				transportIn.Geometry = geometries[leg.Key]
 			}
 		}
 
@@ -547,8 +577,15 @@ func hydrateAdminTrip(id uint) adminTripView {
 	var stops []models.TripStop
 	database.Db.Where("trip_id = ?", id).Order("position ASC").Find(&stops)
 
+	legs := routing.LegsOf(stops)
+	legKeys := make([]string, 0, len(legs))
+	for _, l := range legs {
+		legKeys = append(legKeys, l.Key)
+	}
+	routeRows := routing.Statuses(legKeys)
+
 	views := make([]adminTripStopView, 0, len(stops))
-	for _, s := range stops {
+	for i, s := range stops {
 		var photos []models.TripPhoto
 		database.Db.Where("stop_id = ?", s.ID).Order("position ASC").Find(&photos)
 
@@ -572,6 +609,7 @@ func hydrateAdminTrip(id uint) adminTripView {
 			TransportCountries: cleanCountries(s.TransportCountries),
 			TransportWaypoints: cleanWaypoints(s.TransportWaypoints),
 			Photos:             stopPhotos, TransportPhotos: transportPhotos,
+			Route:              adminRoute(legs, routeRows, i),
 		})
 	}
 
@@ -580,6 +618,18 @@ func hydrateAdminTrip(id uint) adminTripView {
 		DaysTotal: trip.DaysTotal,
 		Stops:     views,
 	}
+}
+
+func adminRoute(legs map[int]routing.Leg, rows map[string]models.RouteGeometry, i int) *adminRouteView {
+	leg, ok := legs[i]
+	if !ok {
+		return nil
+	}
+	v := &adminRouteView{Key: leg.Key, Status: "pending"}
+	if row, ok := rows[leg.Key]; ok {
+		v.Status, v.Source, v.Error = row.Status, row.Source, row.Error
+	}
+	return v
 }
 
 func createTripPhotos(tx *gorm.DB, stopID uint, kind string, photos []tripPhotoInput) error {

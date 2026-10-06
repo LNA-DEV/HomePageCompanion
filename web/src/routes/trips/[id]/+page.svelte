@@ -201,6 +201,18 @@
 		routeStop = null;
 	}
 
+	// The companion routes every leg once (OSRM for cars, Transitous for rail)
+	// and the website draws that stored track; this re-asks for one leg.
+	async function recomputeRoute(stop: TripStop) {
+		if (!stop.route) return;
+		try {
+			await api.recomputeRoute(stop.route.key);
+			stop.route = { ...stop.route, status: 'pending', error: undefined };
+		} catch (e) {
+			error = e instanceof Error ? e.message : 'Could not queue the route.';
+		}
+	}
+
 	async function save() {
 		if (!trip) return;
 		error = '';
@@ -460,6 +472,20 @@
 								{/if}
 							</div>
 							<p class="text-xs text-gray-500 dark:text-gray-400 mt-1">Optional — only needed to correct the drawn trail (e.g. a winding car route).</p>
+							{#if stop.route}
+								<div class="flex items-center gap-3 flex-wrap mt-2 text-sm">
+									{#if stop.route.status === 'ok'}
+										<span class="text-green-700 dark:text-green-400">Track computed ({stop.route.source})</span>
+									{:else if stop.route.status === 'failed'}
+										<span class="text-red-700 dark:text-red-400" title={stop.route.error}>Routing failed — the site draws a straight line</span>
+									{:else}
+										<span class="text-gray-500 dark:text-gray-400">Track is being computed — reload in a moment</span>
+									{/if}
+									{#if stop.route.status !== 'pending'}
+										<button type="button" onclick={() => recomputeRoute(stop)} class="btn-secondary btn-sm">Recompute</button>
+									{/if}
+								</div>
+							{/if}
 						</div>
 						<div>
 							<span class="label">Transport photos</span>

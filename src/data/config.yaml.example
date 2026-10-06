@@ -9,6 +9,9 @@ security:
   ipHashSalt: ${IP_HASH_SALT}
   # Optional: domain used for CORS allow-list.
   domain: ${COMPANION_DOMAIN:-example.com}
+  # Further origins admitted by CORS, compared exactly (no patterns) — e.g. the
+  # site's onion address, "http://<address>.onion".
+  # extraOrigins: []
 
 datasources:
   rss:
@@ -69,3 +72,41 @@ microblog:
 
 webpush:
   subscriberMail: ${WEBPUSH_SUBSCRIBER_MAIL:-mailto:admin@example.com}
+
+# ---- Maps (Home-Page docs/concepts/self-hosted-maps.md) ----------------------
+# The website's maps talk to this companion only: the basemap tiles, GBIF's
+# occurrence overlay and the trip routes all come from here.
+
+# Object storage shared by the companion's modules. Each module keeps its
+# objects under <prefix>/<module>/…, e.g. the basemap under
+# home-page-companion/maps/basemap/. Nothing outside the prefix is touched.
+storage:
+  # S3: credentials from AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY.
+  # Development: "file:///absolute/dir".
+  bucketUrl: "s3://<bucket>?endpoint=https://nbg1.your-objectstorage.com&region=nbg1"
+  prefix: home-page-companion
+
+# Self-hosted vector basemap: a Protomaps planet build (~139 GB, zoom 0–15)
+# copied into the storage bucket by a monthly job and served as z/x/y tiles.
+basemap:
+  enabled: true
+  source: https://build.protomaps.com  # daily builds, <source>/<YYYYMMDD>.pmtiles
+  schemaMajor: 4                       # the tile schema the site's style is written for
+  schedule: "0 0 3 1 * *"              # robfig/cron with seconds: 03:00 on the 1st
+  retainDays: 7                        # keep the previous build this long after a switch
+  publicUrl: https://companion.example.com/api/tiles/basemap
+  # partSizeMiB: 64   # multipart part size (S3 allows at most 10,000 parts)
+  # concurrency: 4    # parts copied in parallel (memory: partSize × concurrency)
+  # cacheSizeMB: 64   # go-pmtiles directory cache
+
+# Trip routes are computed here once per leg, never in the browser.
+# Both default to the public services.
+# routing:
+#   osrmUrl: https://router.project-osrm.org/route/v1
+#   transitousUrl: https://api.transitous.org/api/v1/plan
+
+# GBIF occurrence-density tiles for the dex map, proxied and cached on disk
+# under data/cache/gbif.
+# gbif:
+#   baseUrl: https://api.gbif.org/v2/map/occurrence/density
+#   cacheMB: 1024

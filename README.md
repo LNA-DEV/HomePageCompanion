@@ -22,6 +22,9 @@ collects browser-side telemetry, all driven from a single SvelteKit admin UI.
 - VAPID web-push notifications, including admin broadcast.
 - Admin dashboard (SvelteKit) with stats, logs, and connection health.
 - Client-log ingestion endpoint for browser-side telemetry.
+- Maps for the website without third parties: a self-hosted OpenStreetMap
+  vector basemap (copied monthly into S3), trip routes computed once per leg,
+  and a caching proxy for GBIF's occurrence tiles. See *Maps* below.
 
 ## Architecture
 
@@ -85,6 +88,7 @@ using `${VAR}` or `${VAR:-fallback}` syntax.
 | `MASTODON_INSTANCE` | Mastodon instance URL. |
 | `MASTODON_PAT` | Mastodon access token (used by autouploader and microblog). |
 | `WEBPUSH_SUBSCRIBER_MAIL` | Contact string (usually `mailto:you@example.com`) sent to web-push providers. |
+| `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` | Credentials for the object storage bucket (`storage.bucketUrl`). |
 
 ### YAML config
 
@@ -102,6 +106,66 @@ Top-level sections:
 - `microblog.publishTo[]` — list of target platforms that microblog posts
   publish to.
 - `webpush.subscriberMail` — push-provider contact string.
+- `security.extraOrigins[]` — further CORS origins, compared exactly (the
+  site's onion address).
+- `storage` — the object store the modules share: `bucketUrl` and the
+  companion's folder in it, `prefix` (`home-page-companion`). Every module
+  keeps its objects under `<prefix>/<module>/` — the basemap under
+  `home-page-companion/maps/basemap/` — and nothing outside the prefix is
+  ever touched.
+- `basemap`, `routing`, `gbif` — the maps; see *Maps* below and the template.
+
+## Maps
+
+The website's maps (the trip map, the dex's detailed map, route maps in posts)
+make no request to anyone but this companion. Design and reasoning live in the
+Home-Page repository, `docs/concepts/self-hosted-maps.md`.
+
+**Basemap** (`basemap/`). A [Protomaps](https://docs.protomaps.com/) planet
+build — one PMTiles file of OpenStreetMap vector tiles, ~139 GB, zoom 0–15 — is
+copied from the daily builds into the storage bucket
+(`<storage.prefix>/maps/basemap/<YYYYMMDD>.pmtiles`) and served through
+[go-pmtiles](https://github.com/protomaps/go-pmtiles):
+
+| Route | |
+| --- | --- |
+| `GET /api/tiles/basemap.json` | TileJSON of the active build (`max-age=3600`) |
+| `GET /api/tiles/basemap/:version/:z/:x/:y.mvt` | a tile of the active or a retained build (`immutable`) |
+| `GET /api/admin/basemap` | status, progress of a running copy, the stored builds |
+| `POST /api/admin/basemap/update` | start an update now |
+| `POST /api/admin/basemap/cleanup` | delete expired builds and stale uploads |
+
+The update job (`basemap.schedule`, monthly) finds the newest build of the
+last week, refuses it before copying if it is not schema `basemap.schemaMajor`
+at zoom 15, then copies it part by part — a ranged GET into an S3 multipart
+`UploadPart` — and records every finished part, so a crash or a restart
+resumes at the next missing part (`ResumeInterrupted` at startup). It then
+compares size and header with the source, reads the TileJSON and sample tiles
+through the serving path, and switches over. The previous build stays
+servable for `retainDays`, because browsers cache the TileJSON for an hour and
+the tiles under a build's URL forever. The *Basemap* page of the admin UI shows
+all of it. Only keys under the module's prefix are ever written or deleted.
+
+**Trip routes** (`routing/`). When a trip is saved, every car and train leg
+without a stored track is queued; a worker asks OSRM (car) or Transitous (rail,
+falling back to the road) at most once per second, simplifies the line and
+stores it keyed by mode and points. The public trip payload carries it as
+`transportIn.geometry`. Flights stay straight. `POST /api/admin/routes/backfill`
+queues missing and failed legs (also done at startup); the trip editor shows
+each leg's status and can recompute one.
+
+**GBIF** (`gbif/`). `GET /api/tiles/gbif/:taxonKey/:z/:x/:y.png` proxies
+GBIF's density tiles with the one parameter set the site uses, caching them
+under `data/cache/gbif` (fresh for GBIF's `max-age`, then revalidated with the
+ETag; served stale while GBIF is down; capped at `gbif.cacheMB`).
+
+The S3 store has an integration test that is skipped unless a bucket is named:
+
+```bash
+cd src
+BASEMAP_S3_TEST_URL='s3://<bucket>?endpoint=https://nbg1.your-objectstorage.com&region=nbg1' \
+AWS_ACCESS_KEY_ID=… AWS_SECRET_ACCESS_KEY=… go test ./basemap -run S3Store
+```
 
 ## Local development
 

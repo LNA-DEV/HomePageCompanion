@@ -5,6 +5,10 @@ type Config struct {
 		ApiKey     string `yaml:"apiKey"`
 		Domain     string `yaml:"domain"`
 		IPHashSalt string `yaml:"ipHashSalt"`
+		// ExtraOrigins are admitted by CORS on top of Domain's subdomains and
+		// localhost. Exact origins, never patterns — the onion site is the
+		// reason this exists ("http://<address>.onion").
+		ExtraOrigins []string `yaml:"extraOrigins"`
 	} `yaml:"security"`
 	Datasources struct {
 		Rss []Datasource `yaml:"rss"`
@@ -15,6 +19,68 @@ type Config struct {
 		Subscriber string `yaml:"subscriberMail"`
 	} `yaml:"webpush"`
 	Microblog Microblog `yaml:"microblog"`
+	Storage   Storage   `yaml:"storage"`
+	Basemap   Basemap   `yaml:"basemap"`
+	Routing   Routing   `yaml:"routing"`
+	Gbif      Gbif      `yaml:"gbif"`
+}
+
+// Storage is the object store the companion's modules share. Each module
+// keeps its objects under "<Prefix>/<module>/…" (storage.Prefix), so the
+// bucket can hold other things and the companion's own part stays one folder:
+// home-page-companion/maps/basemap/20261005.pmtiles.
+type Storage struct {
+	// BucketURL is a gocloud bucket URL:
+	// "s3://<bucket>?endpoint=https://nbg1.your-objectstorage.com&region=nbg1"
+	// in production, "file:///abs/dir" for local development. S3 credentials
+	// come from AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY.
+	BucketURL string `yaml:"bucketUrl"`
+	// Prefix is the companion's folder in the bucket ("home-page-companion"
+	// when empty). Nothing outside it is ever written or deleted.
+	Prefix string `yaml:"prefix"`
+}
+
+// Basemap configures the self-hosted vector basemap: a Protomaps planet build
+// copied into the storage bucket (<storage prefix>/maps/basemap/) by a
+// monthly job and served as z/x/y tiles. Off unless Enabled and a storage
+// bucket is configured. See docs/concepts/self-hosted-maps.md in the
+// Home-Page repository.
+type Basemap struct {
+	Enabled bool `yaml:"enabled"`
+	// Source is the base URL of the daily builds, "<Source>/<YYYYMMDD>.pmtiles".
+	Source string `yaml:"source"`
+	// SchemaMajor is the tile schema the site's style is written for. A build
+	// whose metadata "version" has another major is refused before copying.
+	SchemaMajor int `yaml:"schemaMajor"`
+	// Schedule is a robfig/cron spec with seconds. Empty: manual runs only.
+	Schedule string `yaml:"schedule"`
+	// RetainDays keeps the previous version this long after a switch, so a
+	// browser holding the old TileJSON keeps getting tiles.
+	RetainDays int `yaml:"retainDays"`
+	// PublicURL is the tile base as browsers see it; TileJSON's tiles URL is
+	// "<PublicURL>/<version>/{z}/{x}/{y}.mvt".
+	PublicURL string `yaml:"publicUrl"`
+	// PartSizeMiB and Concurrency shape the multipart copy (64 and 4 when 0).
+	PartSizeMiB int `yaml:"partSizeMiB"`
+	Concurrency int `yaml:"concurrency"`
+	// CacheSizeMB is go-pmtiles' directory cache (64 when 0).
+	CacheSizeMB int `yaml:"cacheSizeMB"`
+}
+
+// Routing configures the server-side route geometry for trip legs. Both URLs
+// default to the public services the website used to call from the browser.
+type Routing struct {
+	OSRMURL       string `yaml:"osrmUrl"`
+	TransitousURL string `yaml:"transitousUrl"`
+}
+
+// Gbif configures the proxy for GBIF's occurrence-density tiles.
+type Gbif struct {
+	// BaseURL is the density tile endpoint (default
+	// "https://api.gbif.org/v2/map/occurrence/density").
+	BaseURL string `yaml:"baseUrl"`
+	// CacheMB caps the on-disk tile cache (1024 when 0).
+	CacheMB int `yaml:"cacheMB"`
 }
 
 // Microblog holds the federation settings for the locally-authored

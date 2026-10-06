@@ -41,7 +41,7 @@ func setupTripTest(t *testing.T) *gin.Engine {
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
-	if err := db.AutoMigrate(&models.Trip{}, &models.TripStop{}, &models.TripPhoto{}); err != nil {
+	if err := db.AutoMigrate(&models.Trip{}, &models.TripStop{}, &models.TripPhoto{}, &models.RouteGeometry{}); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
 	database.Db = db
@@ -348,5 +348,75 @@ func TestTripUploadTransformsToJPEGAndCapsDimensions(t *testing.T) {
 	}
 	if got := img.Bounds().Dx(); got != 4096 {
 		t.Fatalf("long edge not capped: width = %d, want 4096", got)
+	}
+}
+
+// TestTripRouteGeometryReachesThePublicPayload: the editor sees each leg's
+// route status by key, and the public payload carries the stored track as
+// transportIn.geometry — only an "ok" one, and never for a flight.
+func TestTripRouteGeometryReachesThePublicPayload(t *testing.T) {
+	r := setupTripTest(t)
+	do(t, r, http.MethodPost, "/api/admin/trips", testTripKey, map[string]any{"title": "Routes"})
+	w := do(t, r, http.MethodPut, "/api/admin/trips/1", testTripKey, map[string]any{
+		"slug": "routes", "title": "Routes", "published": true,
+		"stops": []map[string]any{
+			{"name": "Munich", "lat": 48.137, "lng": 11.575},
+			{"name": "Malmö", "lat": 55.605, "lng": 13.0, "transportMode": "car",
+				"transportWaypoints": []map[string]any{{"lat": 53.55, "lng": 10.0}}},
+			{"name": "Kalmar", "lat": 56.66, "lng": 16.36, "transportMode": "train"},
+			{"name": "Gotland", "lat": 57.64, "lng": 18.29, "transportMode": "flight"},
+		},
+	})
+	if w.Code != http.StatusOK {
+		t.Fatalf("update: %d %s", w.Code, w.Body.String())
+	}
+	var adm adminTripView
+	decode(t, w, &adm)
+	if adm.Stops[0].Route != nil || adm.Stops[3].Route != nil {
+		t.Fatalf("first stop / flight carry a route: %+v / %+v", adm.Stops[0].Route, adm.Stops[3].Route)
+	}
+	car, train := adm.Stops[1].Route, adm.Stops[2].Route
+	if car == nil || train == nil || car.Status != "pending" || car.Key == train.Key {
+		t.Fatalf("routes: %+v %+v", car, train)
+	}
+
+	track := [][2]float64{{48.137, 11.575}, {53.55, 10.0}, {55.605, 13.0}}
+	database.Db.Create(&models.RouteGeometry{Key: car.Key, Mode: "car", Status: "ok", Source: "osrm", Points: track})
+	database.Db.Create(&models.RouteGeometry{Key: train.Key, Mode: "train", Status: "failed", Error: "no rail"})
+
+	w = do(t, r, http.MethodGet, "/api/admin/trips/1", testTripKey, nil)
+	decode(t, w, &adm)
+	if adm.Stops[1].Route.Status != "ok" || adm.Stops[2].Route.Status != "failed" || adm.Stops[2].Route.Error != "no rail" {
+		t.Fatalf("statuses: %+v %+v", adm.Stops[1].Route, adm.Stops[2].Route)
+	}
+
+	w = do(t, r, http.MethodGet, "/api/trips/routes", "", nil)
+	var raw struct {
+		Stops []struct {
+			TransportIn *struct {
+				Geometry [][2]float64 `json:"geometry"`
+			} `json:"transportIn"`
+		} `json:"stops"`
+	}
+	decode(t, w, &raw)
+	if g := raw.Stops[1].TransportIn.Geometry; len(g) != 3 || g[1] != track[1] {
+		t.Fatalf("car geometry: %v", g)
+	}
+	if raw.Stops[2].TransportIn.Geometry != nil || raw.Stops[3].TransportIn.Geometry != nil {
+		t.Fatal("a failed leg or a flight carries geometry")
+	}
+
+	// Saving the same trip again keeps the keys, so the track survives the
+	// stops being re-created.
+	w = do(t, r, http.MethodGet, "/api/admin/trips/1", testTripKey, nil)
+	decode(t, w, &adm)
+	resave, _ := json.Marshal(adm)
+	var payload map[string]any
+	json.Unmarshal(resave, &payload)
+	do(t, r, http.MethodPut, "/api/admin/trips/1", testTripKey, payload)
+	w = do(t, r, http.MethodGet, "/api/trips/routes", "", nil)
+	decode(t, w, &raw)
+	if len(raw.Stops[1].TransportIn.Geometry) != 3 {
+		t.Fatal("geometry lost after re-saving the trip")
 	}
 }

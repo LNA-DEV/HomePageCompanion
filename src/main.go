@@ -1,21 +1,26 @@
 package main
 
 import (
+	"context"
 	"log"
 	"net/http"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"time"
 
 	"github.com/LNA-DEV/HomePageCompanion/admin"
 	"github.com/LNA-DEV/HomePageCompanion/autouploader"
 	"github.com/LNA-DEV/HomePageCompanion/backfill"
+	"github.com/LNA-DEV/HomePageCompanion/basemap"
 	"github.com/LNA-DEV/HomePageCompanion/config"
 	"github.com/LNA-DEV/HomePageCompanion/database"
+	"github.com/LNA-DEV/HomePageCompanion/gbif"
 	"github.com/LNA-DEV/HomePageCompanion/interactions"
 	"github.com/LNA-DEV/HomePageCompanion/inventory"
 	"github.com/LNA-DEV/HomePageCompanion/logger"
 	"github.com/LNA-DEV/HomePageCompanion/models"
+	"github.com/LNA-DEV/HomePageCompanion/routing"
 	"github.com/LNA-DEV/HomePageCompanion/webmention"
 	"github.com/LNA-DEV/HomePageCompanion/webpush"
 	"github.com/gin-contrib/cors"
@@ -47,13 +52,24 @@ func main() {
 	// Data migrations (must run before schema AutoMigrate so column renames are applied first)
 	database.RunMigrations()
 
-	database.MigrateModels([]interface{}{models.Webmention{}, models.AutoUploadItem{}, models.VAPIDKey{}, models.NotificationSubscription{}, models.Feed{}, models.FeedItem{}, models.Author{}, models.Category{}, models.Interaction{}, models.NativeLike{}, models.UploadAttempt{}, models.MicroblogPost{}, models.MicroblogPublication{}, models.MicroblogComment{}, models.Trip{}, models.TripStop{}, models.TripPhoto{}})
+	database.MigrateModels([]interface{}{models.Webmention{}, models.AutoUploadItem{}, models.VAPIDKey{}, models.NotificationSubscription{}, models.Feed{}, models.FeedItem{}, models.Author{}, models.Category{}, models.Interaction{}, models.NativeLike{}, models.UploadAttempt{}, models.MicroblogPost{}, models.MicroblogPublication{}, models.MicroblogComment{}, models.Trip{}, models.TripStop{}, models.TripPhoto{}, models.RouteGeometry{}, models.BasemapVersion{}, models.BasemapPart{}})
 
 	// Inventory
 	inventory.PopulateDatabase()
 
 	// Webpush
 	webpush.LoadVAPIDKeys()
+
+	// Maps: trip routes are computed here, never in the browser; the basemap
+	// and GBIF's density tiles are served from here (Home-Page
+	// docs/concepts/self-hosted-maps.md).
+	routing.Default.Start()
+	go routing.EnqueueAll(false) // legs saved before this existed, and failed ones
+	if err := basemap.Init(context.Background()); err != nil {
+		log.Printf("%v — basemap disabled", err)
+	}
+	basemap.ResumeInterrupted()
+	gbif.Init()
 
 	// Cron setup
 	c := cron.New()
@@ -67,6 +83,13 @@ func main() {
 	c.AddFunc("0 */5 * * * *", func() { config.LoadConfig() })
 	c.AddFunc("0 * */1 * * *", func() { inventory.PopulateDatabase() })
 	c.AddFunc("0 * * * * *", func() { interactions.RunTick() })
+	if spec := basemap.Schedule(); spec != "" {
+		if err := c.AddFunc(spec, basemap.StartUpdate); err != nil {
+			log.Printf("basemap: invalid schedule %q: %v", spec, err)
+		}
+	}
+	c.AddFunc("0 30 4 * * *", basemap.Cleanup)
+	c.AddFunc("0 45 4 * * *", func() { gbif.Default.Evict() })
 	c.Start()
 
 	// Router config
@@ -74,12 +97,11 @@ func main() {
 
 	// Build regex pattern dynamically
 	subdomainRegex := regexp.MustCompile(`^https?://([a-z0-9-]+\.)*` + regexp.QuoteMeta(config.Data.Security.Domain) + `(:[0-9]+)?$`)
-	localhostRegex := regexp.MustCompile(`^https?://localhost(:[0-9]+)?$`)
 
-	config := cors.Config{
+	corsConfig := cors.Config{
 		AllowOrigins: []string{}, // use AllowOriginFunc instead
 		AllowOriginFunc: func(origin string) bool {
-			return subdomainRegex.MatchString(origin) || localhostRegex.MatchString(origin)
+			return originAllowed(origin, subdomainRegex, config.Data.Security.ExtraOrigins)
 		},
 		AllowMethods:     []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
 		AllowHeaders:     []string{"Origin", "Authorization", "Content-Type"},
@@ -88,7 +110,7 @@ func main() {
 		MaxAge:           12 * time.Hour,
 	}
 
-	router.Use(cors.New(config))
+	router.Use(cors.New(corsConfig))
 
 	// API routes
 	api := router.Group("/api")
@@ -117,6 +139,11 @@ func main() {
 
 	// Trip routes (both admin and public sub-trees)
 	admin.RegisterTripRoutes(api, validateAPIKey())
+
+	// Map routes: route geometry (admin), basemap tiles + admin, GBIF tiles
+	routing.RegisterRoutes(api, validateAPIKey())
+	basemap.RegisterRoutes(api, validateAPIKey())
+	gbif.RegisterRoutes(api)
 
 	// Health check
 	router.GET("/health", health)
@@ -165,6 +192,16 @@ func uploadNext(c *gin.Context) {
 
 	go autouploader.Publish(connection)
 	c.JSON(http.StatusAccepted, gin.H{"status": "publish scheduled", "connection": connectionName})
+}
+
+var localhostRegex = regexp.MustCompile(`^https?://localhost(:[0-9]+)?$`)
+
+// originAllowed admits the configured domain and its subdomains, localhost,
+// and the exact extra origins (the onion site). Extra origins are compared
+// exactly, never as patterns. They are read on every request, so a config
+// reload takes effect without a restart.
+func originAllowed(origin string, domain *regexp.Regexp, extra []string) bool {
+	return domain.MatchString(origin) || localhostRegex.MatchString(origin) || slices.Contains(extra, origin)
 }
 
 func health(c *gin.Context) {
