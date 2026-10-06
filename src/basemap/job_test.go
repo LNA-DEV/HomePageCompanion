@@ -22,6 +22,7 @@ import (
 	"github.com/LNA-DEV/HomePageCompanion/config"
 	"github.com/LNA-DEV/HomePageCompanion/database"
 	"github.com/LNA-DEV/HomePageCompanion/models"
+	"github.com/aws/smithy-go"
 	"github.com/gin-gonic/gin"
 	"github.com/protomaps/go-pmtiles/pmtiles"
 	"gocloud.dev/blob"
@@ -471,5 +472,117 @@ func TestServerBucketPutsThePrefixIntoFilePaths(t *testing.T) {
 func TestS3DriverIsRegistered(t *testing.T) {
 	if !blob.DefaultURLMux().ValidBucketScheme("s3") {
 		t.Fatal(`no gocloud driver for "s3"`)
+	}
+}
+
+// deniedStore answers AccessDenied for the parts of the uploads in deny —
+// what S3 says when the requester did not initiate the upload, e.g. after the
+// credentials were replaced between a copy and its resumption.
+type deniedStore struct {
+	Store
+	mu      sync.Mutex
+	deny    map[string]bool
+	denyAll bool
+	parts   int
+	aborts  int
+}
+
+func (d *deniedStore) UploadPart(ctx context.Context, key, uploadID string, n int32, data []byte) (string, error) {
+	d.mu.Lock()
+	d.parts++
+	denied := d.denyAll || d.deny[uploadID]
+	d.mu.Unlock()
+	if denied {
+		return "", &smithy.GenericAPIError{Code: "AccessDenied", Message: "UnknownError"}
+	}
+	return d.Store.UploadPart(ctx, key, uploadID, n, data)
+}
+
+func (d *deniedStore) Abort(ctx context.Context, key, uploadID string) error {
+	d.mu.Lock()
+	d.aborts++
+	denied := d.denyAll || d.deny[uploadID]
+	d.mu.Unlock()
+	if denied {
+		return &smithy.GenericAPIError{Code: "AccessDenied", Message: "UnknownError"}
+	}
+	return d.Store.Abort(ctx, key, uploadID)
+}
+
+func TestARefusedResumeStartsTheCopyOver(t *testing.T) {
+	h := setup(t)
+	src := archive(t, "4.15.2", true)
+	h.src.put("20261005", src, `"etag-a"`)
+	h.s.job.Concurrency = 1
+	h.src.failAfter = 5
+	if err := h.s.job.Run(context.Background()); err == nil {
+		t.Fatal("first run should be interrupted")
+	}
+	old := h.version("20261005")
+	if old.Status != models.BasemapCopying {
+		t.Fatalf("after the interruption: %s", old.Status)
+	}
+
+	// New credentials: the bucket refuses the old upload's parts — and its abort.
+	h.src.failAfter = 0
+	ds := &deniedStore{Store: h.s.job.Store, deny: map[string]bool{old.UploadID: true}}
+	h.s.job.Store = ds
+	if err := h.s.job.Run(context.Background()); err != nil {
+		t.Fatalf("the run should recover by starting over: %v", err)
+	}
+	v := h.version("20261005")
+	if v.Status != models.BasemapActive || v.UploadID == old.UploadID {
+		t.Fatalf("after recovery: status %s, upload %s (old %s)", v.Status, v.UploadID, old.UploadID)
+	}
+	if got, _ := os.ReadFile(h.objectPath("20261005")); !bytes.Equal(got, src) {
+		t.Fatal("the fresh copy differs from the source")
+	}
+	if ds.parts > v.PartsTotal+1 {
+		t.Errorf("%d part uploads for %d parts: the refused one was retried", ds.parts, v.PartsTotal)
+	}
+}
+
+func TestAnAccessDeniedFreshCopyFailsInsteadOfStickingInCopying(t *testing.T) {
+	h := setup(t)
+	h.src.put("20261005", archive(t, "4.15.2", true), `"e"`)
+	ds := &deniedStore{Store: h.s.job.Store, denyAll: true}
+	h.s.job.Store = ds
+	err := h.s.job.Run(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "AccessDenied") {
+		t.Fatalf("err = %v", err)
+	}
+	if v := h.version("20261005"); v.Status != models.BasemapFailed {
+		t.Fatalf("status %s: a denied copy must not stay resumable", v.Status)
+	}
+	if ds.parts != h.s.job.Concurrency && ds.parts > 4 {
+		t.Errorf("%d part attempts: AccessDenied was retried", ds.parts)
+	}
+	// Fixed credentials: the next run starts fresh rather than resuming.
+	ds.denyAll = false
+	if err := h.s.job.Run(context.Background()); err != nil {
+		t.Fatalf("second run: %v", err)
+	}
+	if h.version("20261005").Status != models.BasemapActive {
+		t.Fatal("not active after the credentials were fixed")
+	}
+}
+
+func TestCleanupContinuesPastAnUploadItMayNotAbort(t *testing.T) {
+	h := setup(t)
+	st := h.s.job.Store.(*DirStore)
+	foreign, _ := st.CreateUpload(context.Background(), testPrefix+"/20260901.pmtiles")
+	stale, _ := st.CreateUpload(context.Background(), testPrefix+"/20260902.pmtiles")
+	old := time.Now().Add(-72 * time.Hour)
+	os.Chtimes(st.uploadDir(foreign), old, old)
+	os.Chtimes(st.uploadDir(stale), old, old)
+	h.now = time.Now()
+	h.s.job.Store = &deniedStore{Store: st, deny: map[string]bool{foreign: true}}
+
+	_, aborted, err := h.s.job.Cleanup(context.Background())
+	if aborted != 1 || err == nil || !strings.Contains(err.Error(), foreign) {
+		t.Fatalf("aborted %d, err %v", aborted, err)
+	}
+	if _, err := os.Stat(st.uploadDir(stale)); !os.IsNotExist(err) {
+		t.Error("the abortable upload was left because another one failed")
 	}
 }

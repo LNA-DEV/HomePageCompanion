@@ -135,9 +135,23 @@ func (j *Job) Run(ctx context.Context) (err error) {
 		j.end(err)
 	}()
 
+	// A resumed upload the bucket no longer accepts is given up and the build
+	// copied afresh, once, in the same run.
+	for attempt := 0; ; attempt++ {
+		restart, err := j.runOnce(ctx)
+		if !restart || attempt > 0 {
+			return err
+		}
+		log.Printf("basemap: %v — starting the copy over", err)
+	}
+}
+
+// runOnce is one pass of Run. restart reports that it gave up a resumed upload
+// the bucket refused, so a fresh copy may succeed.
+func (j *Job) runOnce(ctx context.Context) (restart bool, err error) {
 	v, b, resumed, err := j.resumeOrStart(ctx)
 	if err != nil || v == nil {
-		return err
+		return false, err
 	}
 	j.mu.Lock()
 	j.progress.Version, j.progress.PartsTotal, j.progress.BytesTotal = v.Version, v.PartsTotal, v.Size
@@ -149,22 +163,22 @@ func (j *Job) Run(ctx context.Context) (err error) {
 	if v.Status == models.BasemapCopying {
 		j.setPhase(fmt.Sprintf("copying %s (%d parts of %d MiB)", v.Version, v.PartsTotal, v.PartSize>>20))
 		if err := j.copyParts(ctx, v, b); err != nil {
-			if errors.Is(err, errSourceChanged) || errors.Is(err, errSourceGone) || isNoSuchUpload(err) {
+			if errors.Is(err, errSourceChanged) || errors.Is(err, errSourceGone) || uploadUnusable(err) {
 				j.fail(ctx, v, err)
-				return err
+				return resumed && uploadUnusable(err), err
 			}
 			// Anything else is worth resuming: keep the parts, note the error.
 			j.save(v, func(v *models.BasemapVersion) { v.Error = err.Error() })
-			return err
+			return false, err
 		}
 		j.setPhase(fmt.Sprintf("completing %s", v.Version))
 		if err := j.complete(ctx, v); err != nil {
-			if isNoSuchUpload(err) {
+			if uploadUnusable(err) {
 				j.fail(ctx, v, err)
-			} else {
-				j.save(v, func(v *models.BasemapVersion) { v.Error = err.Error() })
+				return resumed, err
 			}
-			return err
+			j.save(v, func(v *models.BasemapVersion) { v.Error = err.Error() })
+			return false, err
 		}
 	}
 
@@ -173,15 +187,15 @@ func (j *Job) Run(ctx context.Context) (err error) {
 		err = fmt.Errorf("verification of %s failed: %w", v.Version, err)
 		j.fail(ctx, v, err)
 		_ = j.Store.Delete(ctx, v.Key)
-		return err
+		return false, err
 	}
 
 	j.setPhase(fmt.Sprintf("activating %s", v.Version))
 	if err := j.activate(v); err != nil {
-		return err
+		return false, err
 	}
 	log.Printf("basemap: %s (schema %s, OSM %s) is now active", v.Version, v.SchemaVersion, v.OSMTime)
-	return nil
+	return false, nil
 }
 
 // resumeOrStart picks up an interrupted version, or inspects the newest build
@@ -335,7 +349,7 @@ func retry[T any](ctx context.Context, j *Job, f func() (T, error)) (T, error) {
 		if v, err = f(); err == nil {
 			return v, nil
 		}
-		if errors.Is(err, errSourceChanged) || errors.Is(err, errSourceGone) || isNoSuchUpload(err) || ctx.Err() != nil {
+		if errors.Is(err, errSourceChanged) || errors.Is(err, errSourceGone) || noRetry(err) || ctx.Err() != nil {
 			return zero, err
 		}
 		select {
@@ -347,9 +361,38 @@ func retry[T any](ctx context.Context, j *Job, f func() (T, error)) (T, error) {
 	return zero, err
 }
 
-func isNoSuchUpload(err error) bool {
+func s3ErrorCode(err error) string {
 	var apiErr smithy.APIError
-	return errors.As(err, &apiErr) && apiErr.ErrorCode() == "NoSuchUpload"
+	if errors.As(err, &apiErr) {
+		return apiErr.ErrorCode()
+	}
+	return ""
+}
+
+// uploadUnusable reports that the bucket will not take more parts for this
+// multipart upload: it is gone, or it belongs to somebody else. S3 answers
+// AccessDenied when the requester did not initiate the upload — which is what
+// happens when the credentials changed between a copy and its resumption (the
+// old key may even be deleted). Such an upload is given up, never retried.
+func uploadUnusable(err error) bool {
+	switch s3ErrorCode(err) {
+	case "NoSuchUpload", "AccessDenied":
+		return true
+	}
+	return false
+}
+
+// noRetry is an answer that waiting will not change: the upload is unusable,
+// or the credentials or the bucket are wrong.
+func noRetry(err error) bool {
+	if uploadUnusable(err) {
+		return true
+	}
+	switch s3ErrorCode(err) {
+	case "InvalidAccessKeyId", "SignatureDoesNotMatch", "NoSuchBucket":
+		return true
+	}
+	return false
 }
 
 func (j *Job) complete(ctx context.Context, v *models.BasemapVersion) error {
@@ -441,15 +484,18 @@ func (j *Job) save(v *models.BasemapVersion, change func(*models.BasemapVersion)
 
 // Cleanup deletes retained versions whose time is up and aborts unfinished
 // uploads under the prefix that no running copy owns and that are older than
-// two days. It touches nothing outside the prefix.
+// two days. It touches nothing outside the prefix. One item it cannot remove
+// does not stop the others; the failures come back joined.
 func (j *Job) Cleanup(ctx context.Context) (deleted, aborted int, err error) {
 	now := j.Now().UTC()
+	var failures []error
 	var expired []models.BasemapVersion
 	database.Db.Where("status = ? AND delete_after IS NOT NULL AND delete_after < ?", models.BasemapRetained, now).Find(&expired)
 	for i := range expired {
 		v := &expired[i]
 		if err := j.Store.Delete(ctx, v.Key); err != nil {
-			return deleted, aborted, fmt.Errorf("deleting %s: %w", v.Key, err)
+			failures = append(failures, fmt.Errorf("deleting %s: %w", v.Key, err))
+			continue
 		}
 		j.save(v, func(v *models.BasemapVersion) { v.Status = models.BasemapDeleted })
 		deleted++
@@ -460,7 +506,7 @@ func (j *Job) Cleanup(ctx context.Context) (deleted, aborted int, err error) {
 
 	uploads, err := j.Store.ListUploads(ctx, strings.Trim(j.Prefix, "/")+"/")
 	if err != nil {
-		return deleted, aborted, fmt.Errorf("listing uploads: %w", err)
+		return deleted, aborted, errors.Join(append(failures, fmt.Errorf("listing uploads: %w", err))...)
 	}
 	var live []models.BasemapVersion
 	database.Db.Where("status = ?", models.BasemapCopying).Find(&live)
@@ -472,13 +518,16 @@ func (j *Job) Cleanup(ctx context.Context) (deleted, aborted int, err error) {
 		if owned[u.UploadID] || now.Sub(u.Initiated) < 48*time.Hour {
 			continue
 		}
+		// An upload started with credentials that were since replaced may not
+		// be ours to abort any more (AccessDenied); it is reported, not fatal.
 		if err := j.Store.Abort(ctx, u.Key, u.UploadID); err != nil {
-			return deleted, aborted, fmt.Errorf("aborting %s: %w", u.Key, err)
+			failures = append(failures, fmt.Errorf("aborting %s (%s): %w", u.Key, u.UploadID, err))
+			continue
 		}
 		aborted++
 	}
 	if deleted+aborted > 0 {
 		log.Printf("basemap: cleanup deleted %d version(s), aborted %d stale upload(s)", deleted, aborted)
 	}
-	return deleted, aborted, nil
+	return deleted, aborted, errors.Join(failures...)
 }
