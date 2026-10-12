@@ -13,8 +13,9 @@ collects browser-side telemetry, all driven from a single SvelteKit admin UI.
 
 - Multi-source RSS ingestion (image and text item types).
 - Per-connection scheduled autoupload to Pixelfed / Bluesky / Instagram /
-  Mastodon, with cron schedules, custom captions, EXIF appending, and
-  copyright attribution.
+  Mastodon / Threads, with cron schedules, custom captions, EXIF appending,
+  and copyright attribution. People in a photo are named in the post and,
+  with their consent, tagged. See *People in photos* below.
 - Federated microblog: write posts, attach images, set content warnings, fetch
   comments and likes back from remote servers.
 - Engagement tracking: native likes (deduplicated by hashed IP), incoming
@@ -105,9 +106,13 @@ Top-level sections:
 - `datasources.rss[]` — RSS sources, each with `name`, `url`, and
   `itemType` (`image` or `text`).
 - `targets[]` — social accounts, each with `platform` and credentials sourced
-  from env vars, plus optional per-platform image sizing overrides.
+  from env vars, plus optional per-platform image sizing overrides and
+  `maxCaptionLength` for an instance that allows longer captions than the
+  platform default (Mastodon: 500).
 - `connections[]` — datasource → target routes, including caption template,
-  cron schedule, routing tags, and EXIF / copyright flags.
+  cron schedule, routing tags, EXIF / copyright flags, `includeAltText`, and
+  the names and tags of people in a photo (`tagModels`, `modelsPrefix`,
+  `modelsAnd`).
 - `microblog.publishTo[]` — list of target platforms that microblog posts
   publish to.
 - `webpush.subscriberMail` — push-provider contact string.
@@ -199,6 +204,34 @@ weeks):
 
 A token in `.env` that differs from the one the stored token descends from
 always wins, so step 2 is all it takes; refresh carries on from there.
+
+## People in photos
+
+When a gallery item carries `lna:model` blocks (the people in the photo, with
+their profiles and consent, maintained in the Home-Page repository), every
+post names them in a line of its own between the alt text and the caption:
+
+```
+With Jane Doe (@janedoe), Max Muster and Markus Penninger
+```
+
+The words are `modelsPrefix` and `modelsAnd` on the connection (`With`/`and`
+by default, `Mit`/`und` for German). Names are never dropped: when a caption
+is too long, copyright, EXIF and hashtags go first, then the alt text and the
+caption are shortened at a sentence or word, then mentions become plain names,
+and only then is the names line itself cut.
+
+A person is **mentioned** only when the connection sets `tagModels: true` and
+the feed says `autotag="true"`. The mention uses the person's profile for the
+target platform: Instagram and Threads take the username from the URL,
+Bluesky looks the profile up (mention facet with the DID), Mastodon and
+Pixelfed resolve it with WebFinger and fall back to each other's profiles. On
+Instagram the person also gets a photo tag. A profile that does not resolve
+never fails the upload; the person is named without a mention and the slug is
+logged. The posting account never mentions itself (for Bluesky, `username`
+must be the handle, not an email). Design and decisions:
+[`docs/concepts/model-tagging.md`](docs/concepts/model-tagging.md), feed
+format: [`docs/concepts/autouploader-model-tags.md`](docs/concepts/autouploader-model-tags.md).
 
 ## Local development
 

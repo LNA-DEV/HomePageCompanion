@@ -103,6 +103,17 @@ type Connection struct {
 	// omit the caption entirely, simply leave Caption empty.
 	IncludeAltText bool `yaml:"includeAltText,omitempty"`
 
+	// TagModels mentions the people in a photo on the target, for those whose
+	// feed entry has autotag="true". Defaults to false: everyone is named
+	// without a mention.
+	TagModels bool `yaml:"tagModels,omitempty"`
+
+	// ModelsPrefix and ModelsAnd are the words of the names line that lists
+	// the people in a photo: "With A, B and C". Empty means the English
+	// default ("With", "and"); a German connection sets "Mit" and "und".
+	ModelsPrefix string `yaml:"modelsPrefix,omitempty"`
+	ModelsAnd    string `yaml:"modelsAnd,omitempty"`
+
 	// RoutingTagsSource selects where to look for meta_skip:<platform> /
 	// meta_only:<platform> routing tags. Empty (default) disables routing.
 	// Allowed values: "" | "rss" | "exif".
@@ -136,4 +147,8 @@ type Target struct {
 	// overrides. 0 = use the platform default from imageresize.DefaultsForPlatform.
 	MaxImageBytes    int `yaml:"maxImageBytes,omitempty"`
 	MaxImageLongEdge int `yaml:"maxImageLongEdge,omitempty"`
+
+	// MaxCaptionLength overrides the platform's caption limit for instances
+	// that allow more (Mastodon defaults to 500). 0 = platform default.
+	MaxCaptionLength int `yaml:"maxCaptionLength,omitempty"`
 }

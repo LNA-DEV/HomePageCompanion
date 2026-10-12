@@ -219,7 +219,7 @@ func publishToBluesky(post *models.MicroblogPost, target config.Target) (*publis
 		text = "CW: " + post.ContentWarning + "\n\n" + text
 	}
 
-	ref, err := blueskyapi.CreatePost(session, text, post.ImageAltText, blob, time.Now())
+	ref, err := blueskyapi.CreatePost(session, text, post.ImageAltText, blob, time.Now(), nil)
 	if err != nil {
 		return nil, err
 	}

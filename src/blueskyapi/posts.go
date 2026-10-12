@@ -66,8 +66,10 @@ func UploadImage(session *Session, image []byte, mimeType string) (*BlobRef, err
 // CreatePost publishes a text post on the authenticated repo, optionally
 // with an image embed. Pass blob == nil for a text-only post. altText is
 // only used when blob != nil; if empty it falls back to "Alt not found".
-// createdAt is sent verbatim; if zero, time.Now() is used.
-func CreatePost(session *Session, text, altText string, blob *BlobRef, createdAt time.Time) (*PostRef, error) {
+// createdAt is sent verbatim; if zero, time.Now() is used. mentions maps
+// mention text in text ("@jane.bsky.social") to the account's DID; nil
+// means none.
+func CreatePost(session *Session, text, altText string, blob *BlobRef, createdAt time.Time, mentions map[string]string) (*PostRef, error) {
 	if session == nil {
 		return nil, fmt.Errorf("bluesky: nil session")
 	}
@@ -94,7 +96,7 @@ func CreatePost(session *Session, text, altText string, blob *BlobRef, createdAt
 		Created: createdAt.Format(time.RFC3339),
 		Type:    "app.bsky.feed.post",
 		Langs:   []string{"en"},
-		Facets:  toAnySlice(ExtractFacets(text)),
+		Facets:  toAnySlice(ExtractFacets(text, mentions)),
 	}
 	if blob != nil {
 		if altText == "" {
@@ -150,10 +152,30 @@ func CreatePost(session *Session, text, altText string, blob *BlobRef, createdAt
 	return &post, nil
 }
 
-// ExtractFacets returns Bluesky-style hashtag and link facets for the given
-// text. Useful when composing post text outside the package.
-func ExtractFacets(text string) []map[string]interface{} {
+// ExtractFacets returns Bluesky-style hashtag, link and mention facets for
+// the given text. Useful when composing post text outside the package.
+// mentions maps mention text ("@jane.bsky.social") to the account's DID;
+// every occurrence of it in text gets a mention facet. Offsets are UTF-8
+// bytes, as the lexicon wants, and are computed on the final text.
+func ExtractFacets(text string, mentions map[string]string) []map[string]interface{} {
 	var facets []map[string]interface{}
+
+	for mention, did := range mentions {
+		for _, start := range mentionOffsets(text, mention) {
+			facets = append(facets, map[string]interface{}{
+				"index": map[string]int{
+					"byteStart": start,
+					"byteEnd":   start + len(mention),
+				},
+				"features": []interface{}{
+					map[string]interface{}{
+						"$type": "app.bsky.richtext.facet#mention",
+						"did":   did,
+					},
+				},
+			})
+		}
+	}
 
 	hashtagPattern := regexp.MustCompile(`#\w+`)
 	for _, match := range hashtagPattern.FindAllStringIndex(text, -1) {
@@ -192,6 +214,42 @@ func ExtractFacets(text string) []map[string]interface{} {
 	}
 
 	return facets
+}
+
+// mentionOffsets returns the byte offsets of mention in text, skipping
+// matches that are only the start of a longer handle.
+func mentionOffsets(text, mention string) []int {
+	if mention == "" {
+		return nil
+	}
+	var offsets []int
+	for from := 0; ; {
+		i := strings.Index(text[from:], mention)
+		if i < 0 {
+			return offsets
+		}
+		start := from + i
+		end := start + len(mention)
+		if !continuesHandle(text[end:]) {
+			offsets = append(offsets, start)
+		}
+		from = end
+	}
+}
+
+// continuesHandle reports whether rest, the text right after a match, makes
+// the match part of a longer handle: "@jane.bsky.social" in
+// "@jane.bsky.socialite" or "@jane.bsky.social.uk", but not in
+// "@jane.bsky.social)" or "@jane.bsky.social. Next".
+func continuesHandle(rest string) bool {
+	if strings.HasPrefix(rest, ".") {
+		rest = rest[1:]
+	}
+	if rest == "" {
+		return false
+	}
+	b := rest[0]
+	return b == '-' || (b >= '0' && b <= '9') || (b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z')
 }
 
 func toAnySlice(maps []map[string]interface{}) []any {

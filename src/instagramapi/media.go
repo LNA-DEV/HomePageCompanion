@@ -11,14 +11,43 @@ import (
 	"github.com/LNA-DEV/HomePageCompanion/redact"
 )
 
+// UserTag tags an account on the photo. X and Y are the position of the tag
+// on the image, from 0.0 to 1.0. The username has no "@" and must belong to a
+// public account.
+type UserTag struct {
+	Username string  `json:"username"`
+	X        float64 `json:"x"`
+	Y        float64 `json:"y"`
+}
+
+// StatusError is a response Instagram rejected with a status other than 429
+// (which is ErrRateLimited).
+type StatusError struct {
+	Op         string
+	StatusCode int
+	Body       string
+}
+
+func (e *StatusError) Error() string {
+	return fmt.Sprintf("instagram %s status %d body: %s", e.Op, e.StatusCode, e.Body)
+}
+
 // CreateMediaContainer uploads (by URL) an image to Instagram as a media
-// container and returns the creation ID. Caption can be empty.
-func CreateMediaContainer(accountID, accessToken, imageURL, caption string) (string, error) {
+// container and returns the creation ID. Caption can be empty. userTags tag
+// accounts on the photo; nil means none.
+func CreateMediaContainer(accountID, accessToken, imageURL, caption string, userTags []UserTag) (string, error) {
 	endpoint := fmt.Sprintf("%s%s/media", GraphURL, accountID)
 	params := url.Values{}
 	params.Set("access_token", accessToken)
 	params.Set("caption", caption)
 	params.Set("image_url", imageURL)
+	if len(userTags) > 0 {
+		tags, err := json.Marshal(userTags)
+		if err != nil {
+			return "", err
+		}
+		params.Set("user_tags", string(tags))
+	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
 	defer cancel()
@@ -41,7 +70,7 @@ func CreateMediaContainer(accountID, accessToken, imageURL, caption string) (str
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		body, _ := io.ReadAll(resp.Body)
-		return "", fmt.Errorf("instagram create container status %d body: %s", resp.StatusCode, string(body))
+		return "", &StatusError{Op: "create container", StatusCode: resp.StatusCode, Body: string(body)}
 	}
 
 	var res struct {

@@ -9,6 +9,7 @@ import (
 	"math/rand"
 	"net/http"
 	"regexp"
+	"strings"
 	"time"
 
 	"github.com/LNA-DEV/HomePageCompanion/config"
@@ -64,16 +65,19 @@ func Publish(connection config.Connection) {
 		}
 	}
 
-	caption := BuildCaption(connection, entry, feed, imageBytes, captionLimitFor(target.Platform), maxHashtagsFor(target.Platform))
+	credits := resolveCredits(entry.GUID, peopleFromEntry(entry), connection, target)
+	built := BuildCaption(connection, entry, feed, imageBytes, credits, captionLimitsFor(target))
+	logCaptionCuts(entry.GUID, target.Platform, built)
+	caption := built.Text
 
 	var err error
 	switch target.Platform {
 	case "pixelfed":
 		err = publishPixelfedEntry(entry, target, caption)
 	case "instagram":
-		err = publishInstagramEntry(entry, target, caption)
+		err = publishInstagramEntry(entry, target, caption, credits)
 	case "bluesky":
-		err = publishBlueskyEntry(entry, target, caption)
+		err = publishBlueskyEntry(entry, target, caption, credits)
 	case "mastodon":
 		err = publishMastodonEntry(entry, target, caption)
 	case "threads":
@@ -87,6 +91,17 @@ func Publish(connection config.Connection) {
 		log.Printf("Failed to publish %q to %s (%s): %v", entry.GUID, target.Platform, target.Name, err)
 	}
 	RecordAttempt(connection.Name, entry.GUID, target.Platform, target.Name, err, 0)
+}
+
+// logCaptionCuts reports what the length budget took from the names line.
+// Log lines name the slug, never the name.
+func logCaptionCuts(guid, platform string, c Caption) {
+	for _, slug := range c.Unmentioned {
+		log.Printf("autouploader: %s on %s: model %s not tagged: caption too long", guid, platform, slug)
+	}
+	if len(c.NamesCut) > 0 {
+		log.Printf("autouploader: %s on %s: names line cut to fit, not named in full: %s", guid, platform, strings.Join(c.NamesCut, ", "))
+	}
 }
 
 // needsImageBytes returns true when any of the metadata features that require
@@ -118,15 +133,43 @@ func metadataImageURL(entry *gofeed.Item) string {
 	return ""
 }
 
-// captionLimitFor returns the per-platform soft cap used by BuildCaption.
+// captionLimitsFor returns what the target accepts in a caption: the
+// platform's defaults, with the target's optional maxCaptionLength on top.
+func captionLimitsFor(target config.Target) CaptionLimits {
+	lim := CaptionLimits{
+		MaxLen:      captionLimitFor(target.Platform),
+		MaxHashtags: maxHashtagsFor(target.Platform),
+		Len:         captionLenFor(target.Platform),
+	}
+	if target.MaxCaptionLength > 0 {
+		lim.MaxLen = target.MaxCaptionLength
+	}
+	return lim
+}
+
+// captionLimitFor returns the per-platform caption cap used by BuildCaption.
+// Mastodon's default instance limit is 500 (mastodon.social and
+// mastodon.online both report it); an instance that allows more sets
+// maxCaptionLength on the target.
 func captionLimitFor(platform string) int {
 	switch platform {
 	case "bluesky":
 		return 300
-	case "threads":
+	case "threads", "mastodon":
 		return 500
 	default:
 		return 2000
+	}
+}
+
+// captionLenFor returns how the platform counts caption length. Threads
+// counts an emoji as its UTF-8 bytes; everyone else is measured in runes.
+func captionLenFor(platform string) func(string) int {
+	switch platform {
+	case "threads":
+		return threadsLen
+	default:
+		return runeLen
 	}
 }
 

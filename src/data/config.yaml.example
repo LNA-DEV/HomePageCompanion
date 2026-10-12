@@ -39,6 +39,9 @@ targets:
     platform: mastodon
     instance: ${MASTODON_INSTANCE}
     pat: ${MASTODON_PAT}
+    # Captions are cut to the platform's limit (Mastodon: 500). Set the
+    # instance's own limit if it allows more (/api/v2/instance, max_characters).
+    # maxCaptionLength: 500
 
   - name: main-threads
     platform: threads
@@ -58,6 +61,12 @@ connections:
     sourceName: Photo RSS
     targetName: main-instagram
     caption: "More at example.com or the link in my profile"
+    # Optional on every connection:
+    # includeAltText: true  # the image's alt text above the caption
+    # tagModels: true       # mention people whose feed entry has autotag="true"
+    #                       # (Instagram: also a photo tag); everyone is named either way
+    # modelsPrefix: "With"  # the names line: "With A, B and C"
+    # modelsAnd: "and"
   - name: mastodon
     sourceName: Photo RSS
     targetName: main-mastodon

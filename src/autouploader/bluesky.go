@@ -10,7 +10,7 @@ import (
 	"github.com/mmcdole/gofeed"
 )
 
-func publishBlueskyEntry(entry *gofeed.Item, target config.Target, caption string) error {
+func publishBlueskyEntry(entry *gofeed.Item, target config.Target, caption string, credits []Credit) error {
 	session, err := blueskyapi.Login(target.Username, target.PAT)
 	if err != nil {
 		return err
@@ -33,11 +33,28 @@ func publishBlueskyEntry(entry *gofeed.Item, target config.Target, caption strin
 		return err
 	}
 
-	post, err := blueskyapi.CreatePost(session, caption, altText, blob, time.Now())
+	post, err := blueskyapi.CreatePost(session, caption, altText, blob, time.Now(), blueskyMentions(credits))
 	if err != nil {
 		return err
 	}
 
 	log.Println("Entry published successfully:", entry.Title)
 	return publishedEntry(entry.GUID, target.Platform, &post.CID, &post.URI, nil)
+}
+
+// blueskyMentions maps each mention text to the DID it stands for. A mention
+// the length budget turned back into a plain name is not in the caption, so
+// it gets no facet.
+func blueskyMentions(credits []Credit) map[string]string {
+	var mentions map[string]string
+	for _, c := range credits {
+		if c.Mention == "" {
+			continue
+		}
+		if mentions == nil {
+			mentions = map[string]string{}
+		}
+		mentions[c.Mention] = c.Account
+	}
+	return mentions
 }
