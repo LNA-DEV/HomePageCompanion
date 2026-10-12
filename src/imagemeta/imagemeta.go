@@ -41,6 +41,10 @@ func Extract(image []byte) (*Metadata, error) {
 	if len(image) == 0 {
 		return m, fmt.Errorf("imagemeta: empty image")
 	}
+	format, ok := detectFormat(image)
+	if !ok {
+		return m, fmt.Errorf("imagemeta: unsupported image format")
+	}
 
 	seen := make(map[string]bool)
 	addKeyword := func(s string) {
@@ -54,7 +58,7 @@ func Extract(image []byte) (*Metadata, error) {
 
 	opts := imagemeta.Options{
 		R:           bytes.NewReader(image),
-		ImageFormat: imagemeta.ImageFormatAuto,
+		ImageFormat: format,
 		Sources:     imagemeta.EXIF | imagemeta.IPTC | imagemeta.XMP,
 		HandleTag: func(t imagemeta.TagInfo) error {
 			switch t.Tag {
@@ -110,6 +114,31 @@ func Extract(image []byte) (*Metadata, error) {
 		return m, err
 	}
 	return m, nil
+}
+
+// detectFormat sniffs the container format from the leading magic bytes.
+// Upstream's ImageFormatAuto is not implemented and fails every decode, so
+// the format has to be passed explicitly. TIFF-based RAW files (DNG, CR2,
+// NEF) are read as TIFF; HEIF and AVIF share one upstream decoder.
+func detectFormat(b []byte) (imagemeta.ImageFormat, bool) {
+	switch {
+	case bytes.HasPrefix(b, []byte{0xFF, 0xD8, 0xFF}):
+		return imagemeta.JPEG, true
+	case bytes.HasPrefix(b, []byte("\x89PNG\r\n\x1a\n")):
+		return imagemeta.PNG, true
+	case len(b) >= 12 && string(b[0:4]) == "RIFF" && string(b[8:12]) == "WEBP":
+		return imagemeta.WebP, true
+	case bytes.HasPrefix(b, []byte("II*\x00")), bytes.HasPrefix(b, []byte("MM\x00*")):
+		return imagemeta.TIFF, true
+	case len(b) >= 12 && string(b[4:8]) == "ftyp":
+		switch string(b[8:12]) {
+		case "avif", "avis":
+			return imagemeta.AVIF, true
+		case "heic", "heix", "heim", "heis", "hevc", "hevx", "mif1", "msf1":
+			return imagemeta.HEIF, true
+		}
+	}
+	return imagemeta.ImageFormatAuto, false
 }
 
 // --- value coercion helpers ---------------------------------------------------

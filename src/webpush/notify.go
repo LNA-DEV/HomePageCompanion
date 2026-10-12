@@ -24,9 +24,9 @@ func BroadcastNotification(message models.Notification) {
     // Send to each
     for _, sub := range subscriptions {
         if err := SendNotification(sub, message); err != nil {
-            log.Printf("Failed to send to user %s: %v", sub.ID, err)
+            log.Printf("Failed to send to user %d: %v", sub.ID, err)
         } else {
-            log.Printf("Notification sent to user %s", sub.ID)
+            log.Printf("Notification sent to user %d", sub.ID)
         }
     }
 }
