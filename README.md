@@ -20,6 +20,8 @@ collects browser-side telemetry, all driven from a single SvelteKit admin UI.
 - Engagement tracking: native likes (deduplicated by hashed IP), incoming
   webmentions, and remote interactions from federated servers.
 - VAPID web-push notifications, including admin broadcast.
+- Instagram and Threads tokens refreshed weekly, stored encrypted, so they
+  never hit Meta's 60-day expiry. See *Token refresh* below.
 - Admin dashboard (SvelteKit) with stats, logs, and connection health.
 - Client-log ingestion endpoint for browser-side telemetry.
 - Maps for the website without third parties: a self-hosted OpenStreetMap
@@ -83,10 +85,13 @@ using `${VAR}` or `${VAR:-fallback}` syntax.
 | `PIXELFED_INSTANCE` | Pixelfed instance URL (e.g. `https://pixelfed.de`). |
 | `BLUESKY_USERNAME` | Bluesky handle. |
 | `BLUESKY_PAT` | Bluesky app password. |
-| `INSTAGRAM_ACCESS_TOKEN` | Instagram Graph API access token. |
+| `INSTAGRAM_ACCESS_TOKEN` | Instagram Graph API access token (long-lived; refreshed automatically, see *Token refresh*). |
 | `INSTAGRAM_ACCOUNT_ID` | Instagram Graph API account ID. |
 | `MASTODON_INSTANCE` | Mastodon instance URL. |
 | `MASTODON_PAT` | Mastodon access token (used by autouploader and microblog). |
+| `THREADS_ACCESS_TOKEN` | Threads Graph API access token (long-lived; refreshed automatically, see *Token refresh*). |
+| `THREADS_USER_ID` | Threads user ID. |
+| `TOKEN_ENCRYPTION_KEY` | 32 bytes, base64 (`openssl rand -base64 32`). Encrypts the refreshed Instagram/Threads tokens in `companion.db`. Without it they are not refreshed. |
 | `WEBPUSH_SUBSCRIBER_MAIL` | Contact string (usually `mailto:you@example.com`) sent to web-push providers. |
 | `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` | Credentials for the object storage bucket (`storage.bucketUrl`). |
 
@@ -166,6 +171,34 @@ cd src
 BASEMAP_S3_TEST_URL='s3://<bucket>?endpoint=https://nbg1.your-objectstorage.com&region=nbg1' \
 AWS_ACCESS_KEY_ID=… AWS_SECRET_ACCESS_KEY=… go test ./basemap -run S3Store
 ```
+
+## Token refresh (Instagram, Threads)
+
+Meta's long-lived tokens expire 60 days after they were issued or last
+refreshed, and an expired one cannot be refreshed. The companion (`metatoken/`)
+keeps them alive: it stores the current token per target, encrypted with
+`TOKEN_ENCRYPTION_KEY`, in `platform_tokens`, puts it in place of the `.env`
+token on every config load, and refreshes it once a week (daily cron at 03:20,
+plus once a minute after startup). A failed refresh keeps the old token and is
+retried the next day. Design and decisions:
+[`docs/concepts/meta-token-refresh.md`](docs/concepts/meta-token-refresh.md).
+
+The dashboard's *Target Health* card shows each token's expiry, the last
+error, and a *Refresh token* button. `GET /api/admin/tokens` and
+`POST /api/admin/tokens/:target/refresh` do the same over the API; neither
+returns a token.
+
+If a token has expired anyway (access revoked at Meta, the companion down for
+weeks):
+
+1. Create a new long-lived token in Meta's app dashboard: *Instagram API
+   setup with Instagram business login* for Instagram, the Threads use case
+   for Threads.
+2. Put it in `.env`.
+3. `docker compose up -d companion`. A `restart` does not re-read `env_file`.
+
+A token in `.env` that differs from the one the stored token descends from
+always wins, so step 2 is all it takes; refresh carries on from there.
 
 ## Local development
 

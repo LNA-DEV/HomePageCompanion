@@ -1,8 +1,8 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { api, type DashboardStats, type TargetHealth } from '$lib/api';
+	import { api, type DashboardStats, type TargetHealth, type TokenStatus } from '$lib/api';
 	import { PageHeader, StatsCard, Loading, PlatformBadge } from '$lib/components';
-	import { CheckCircle2, AlertTriangle, XCircle, HelpCircle } from 'lucide-svelte';
+	import { CheckCircle2, AlertTriangle, XCircle, HelpCircle, KeyRound, RefreshCw } from 'lucide-svelte';
 
 	let stats = $state<DashboardStats | null>(null);
 	let healths = $state<TargetHealth[]>([]);
@@ -30,6 +30,35 @@
 		}
 		actionLoading = '';
 		setTimeout(() => (actionMessage = null), 5000);
+	}
+
+	// Instagram/Threads tokens: refreshed weekly by the backend; this only
+	// shows how that is going and lets the admin trigger it.
+	let tokenBusy = $state('');
+
+	async function refreshToken(name: string) {
+		tokenBusy = name;
+		// A refusal from Meta comes back as the token's lastError; reloading the
+		// health shows it, or the previous state if either call fails.
+		try {
+			await api.refreshToken(name);
+			healths = (await api.getTargetHealth()) ?? healths;
+		} catch (e) {
+			// keep what is shown
+		}
+		tokenBusy = '';
+	}
+
+	function tokenLabel(t: TokenStatus): string {
+		if (t.status === 'expired') return 'Token expired';
+		if (t.daysLeft !== undefined) return `Token expires in ${t.daysLeft} d`;
+		return 'Token expiry unknown until the first refresh';
+	}
+
+	function tokenTone(t: TokenStatus): string {
+		if (t.status === 'expired') return 'text-red-600 dark:text-red-400';
+		if (t.status === 'expiring') return 'text-amber-700 dark:text-amber-400';
+		return 'text-gray-500 dark:text-gray-400';
 	}
 
 	function relTime(iso: string | undefined): string {
@@ -132,6 +161,37 @@
 								<p class="text-sm text-red-700 dark:text-red-400 mt-1 break-words">
 									{h.lastErrorCode ? h.lastErrorCode + ' · ' : ''}{h.lastError}
 								</p>
+							{/if}
+							{#if h.token?.status === 'disabled'}
+								<p class="inline-flex items-center gap-1 text-sm text-amber-700 dark:text-amber-400 mt-1">
+									<AlertTriangle size={14} />
+									Token refresh disabled: {h.token.disabledReason}
+								</p>
+							{:else if h.token}
+								{@const tk = h.token}
+								<div class="flex flex-wrap items-center gap-3 mt-2 text-xs {tokenTone(tk)}">
+									<span class="inline-flex items-center gap-1">
+										<KeyRound size={12} />
+										{tokenLabel(tk)}
+									</span>
+									{#if tk.refreshedAt}
+										<span>Refreshed {relTime(tk.refreshedAt)}</span>
+									{/if}
+									<button
+										type="button"
+										onclick={() => refreshToken(h.name)}
+										disabled={tokenBusy !== ''}
+										class="inline-flex items-center gap-1 text-primary-600 dark:text-primary-400 hover:underline disabled:opacity-50 disabled:cursor-not-allowed"
+									>
+										<RefreshCw size={12} class={tokenBusy === h.name ? 'animate-spin' : ''} />
+										{tokenBusy === h.name ? 'Refreshing…' : 'Refresh token'}
+									</button>
+								</div>
+								{#if tk.lastError}
+									<p class="text-sm text-red-700 dark:text-red-400 mt-1 break-words">
+										Token refresh failed {relTime(tk.lastAttemptAt)} · {tk.lastError}
+									</p>
+								{/if}
 							{/if}
 							<div class="flex flex-wrap items-center gap-3 mt-2 text-xs text-gray-500 dark:text-gray-400">
 								{#if h.lastAttemptAt}

@@ -7,6 +7,8 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+
+	"github.com/LNA-DEV/HomePageCompanion/redact"
 )
 
 // MediaLikeCount returns the current `like_count` for a published media id.
@@ -31,7 +33,7 @@ func MediaLikeCount(mediaID, accessToken string) (int, error) {
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return 0, err
+		return 0, redact.URLError(err)
 	}
 	defer resp.Body.Close()
 

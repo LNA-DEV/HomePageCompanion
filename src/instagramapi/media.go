@@ -7,6 +7,8 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+
+	"github.com/LNA-DEV/HomePageCompanion/redact"
 )
 
 // CreateMediaContainer uploads (by URL) an image to Instagram as a media
@@ -30,7 +32,7 @@ func CreateMediaContainer(accountID, accessToken, imageURL, caption string) (str
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return "", err
+		return "", redact.URLError(err)
 	}
 	defer resp.Body.Close()
 
@@ -75,7 +77,7 @@ func CheckMediaStatus(creationID, accessToken string) (string, error) {
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return "", err
+		return "", redact.URLError(err)
 	}
 	defer resp.Body.Close()
 
@@ -119,7 +121,7 @@ func PublishContainer(accountID, accessToken, creationID string) (string, error)
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return "", err
+		return "", redact.URLError(err)
 	}
 	defer resp.Body.Close()
 

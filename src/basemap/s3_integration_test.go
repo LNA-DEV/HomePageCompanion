@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strconv"
 	"testing"
 	"time"
 )
@@ -18,6 +19,8 @@ import (
 //	AWS_ACCESS_KEY_ID=… AWS_SECRET_ACCESS_KEY=… go test ./basemap -run S3Store
 //
 // Everything it writes is under "spike/store-test/" and removed again.
+// BASEMAP_S3_TEST_PART_MIB sets the size of the first part (5 MiB, S3's
+// minimum, when unset); the job's default is 64.
 func TestS3StoreAgainstARealBucket(t *testing.T) {
 	bucketURL := os.Getenv("BASEMAP_S3_TEST_URL")
 	if bucketURL == "" {
@@ -32,7 +35,12 @@ func TestS3StoreAgainstARealBucket(t *testing.T) {
 	key := prefix + "object.bin"
 
 	// Two parts: S3 wants at least 5 MiB for every part but the last.
-	part1 := make([]byte, 5<<20)
+	partMiB := 5
+	if v, err := strconv.Atoi(os.Getenv("BASEMAP_S3_TEST_PART_MIB")); err == nil && v >= 5 {
+		partMiB = v
+	}
+	t.Logf("first part: %d MiB", partMiB)
+	part1 := make([]byte, partMiB<<20)
 	part2 := []byte("the tail of the object")
 	rand.Read(part1)
 

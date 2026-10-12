@@ -17,6 +17,7 @@ import (
 	"github.com/LNA-DEV/HomePageCompanion/config"
 	"github.com/LNA-DEV/HomePageCompanion/database"
 	"github.com/LNA-DEV/HomePageCompanion/models"
+	"github.com/LNA-DEV/HomePageCompanion/redact"
 	"github.com/corona10/goimagehash"
 	"github.com/mmcdole/gofeed"
 )
@@ -515,7 +516,7 @@ func fetchAllInstagramMedia(target config.Target) ([]InstagramMedia, error) {
 	for nextURL != "" {
 		resp, err := http.Get(nextURL)
 		if err != nil {
-			return allMedia, err
+			return allMedia, redact.URLError(err)
 		}
 
 		var mediaResp InstagramMediaResponse

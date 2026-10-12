@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"net/url"
 	"time"
+
+	"github.com/LNA-DEV/HomePageCompanion/redact"
 )
 
 // Reply is one entry from the Threads /{media-id}/replies endpoint. Only the
@@ -64,13 +66,13 @@ func fetchRepliesPage(pageURL string) ([]Reply, string, error) {
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, pageURL, nil)
 	if err != nil {
-		return nil, "", err
+		return nil, "", redact.URLError(err)
 	}
 	req.Header.Set("Accept", "application/json")
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return nil, "", err
+		return nil, "", redact.URLError(err)
 	}
 	defer resp.Body.Close()
 

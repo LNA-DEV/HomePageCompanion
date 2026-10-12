@@ -201,6 +201,13 @@ class ApiClient {
 		return this.request<TargetHealth[]>('/admin/targets/health');
 	}
 
+	// Instagram/Threads token refresh
+	async refreshToken(target: string): Promise<TokenStatus> {
+		return this.request<TokenStatus>(`/admin/tokens/${encodeURIComponent(target)}/refresh`, {
+			method: 'POST'
+		});
+	}
+
 	// Client logs (browser → server)
 	async sendClientLogs(
 		clientId: string,
@@ -745,4 +752,21 @@ export interface TargetHealth {
 	lastHttpStatus?: number;
 	recentFailures: number;
 	recentSuccesses: number;
+	token?: TokenStatus;
+}
+
+export type TokenState = 'ok' | 'expiring' | 'expired' | 'unknown' | 'disabled';
+
+// The Instagram/Threads token of a target. Never carries the token itself.
+export interface TokenStatus {
+	name: string;
+	platform: string;
+	status: TokenState;
+	source?: 'config' | 'refreshed';
+	refreshedAt?: string;
+	expiresAt?: string;
+	daysLeft?: number;
+	lastAttemptAt?: string;
+	lastError?: string;
+	disabledReason?: string;
 }

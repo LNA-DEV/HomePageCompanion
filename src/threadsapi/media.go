@@ -7,6 +7,8 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+
+	"github.com/LNA-DEV/HomePageCompanion/redact"
 )
 
 // CreateImageContainer uploads (by URL) an image as a Threads media container
@@ -61,7 +63,7 @@ func postContainer(endpoint string, params url.Values) (string, error) {
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return "", err
+		return "", redact.URLError(err)
 	}
 	defer resp.Body.Close()
 
@@ -109,7 +111,7 @@ func CheckMediaStatus(creationID, accessToken string) (string, error) {
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return "", err
+		return "", redact.URLError(err)
 	}
 	defer resp.Body.Close()
 
@@ -157,7 +159,7 @@ func PublishContainer(userID, accessToken, creationID string) (string, error) {
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return "", err
+		return "", redact.URLError(err)
 	}
 	defer resp.Body.Close()
 
@@ -203,7 +205,7 @@ func GetPermalink(mediaID, accessToken string) (string, error) {
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return "", err
+		return "", redact.URLError(err)
 	}
 	defer resp.Body.Close()
 
@@ -249,7 +251,7 @@ func DeleteMedia(mediaID, accessToken string) error {
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return err
+		return redact.URLError(err)
 	}
 	defer resp.Body.Close()
 

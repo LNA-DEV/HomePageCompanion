@@ -10,6 +10,7 @@ import (
 	"github.com/LNA-DEV/HomePageCompanion/database"
 	"github.com/LNA-DEV/HomePageCompanion/inventory"
 	"github.com/LNA-DEV/HomePageCompanion/logger"
+	"github.com/LNA-DEV/HomePageCompanion/metatoken"
 	"github.com/LNA-DEV/HomePageCompanion/models"
 	"github.com/gin-gonic/gin"
 )
@@ -750,12 +751,21 @@ type TargetHealth struct {
 	LastHTTPStatus  int        `json:"lastHttpStatus,omitempty"`
 	RecentFailures  int64      `json:"recentFailures"`
 	RecentSuccesses int64      `json:"recentSuccesses"`
+
+	// Token is set for Instagram and Threads targets, whose tokens expire
+	// unless metatoken keeps refreshing them.
+	Token *metatoken.Status `json:"token,omitempty"`
 }
 
 // GetTargetHealth returns one TargetHealth row per configured target.
 func GetTargetHealth(c *gin.Context) {
 	cutoff := time.Now().Add(-24 * time.Hour)
 	healths := make([]TargetHealth, 0, len(config.Data.Targets))
+
+	tokens := make(map[string]metatoken.Status)
+	for _, ts := range metatoken.Statuses() {
+		tokens[ts.Name] = ts
+	}
 
 	for _, t := range config.Data.Targets {
 		h := TargetHealth{Name: t.Name, Platform: t.Platform, Status: "unknown"}
@@ -815,6 +825,17 @@ func GetTargetHealth(c *gin.Context) {
 			h.Status = "degraded"
 		default:
 			h.Status = "healthy"
+		}
+
+		// A dead or dying token outweighs what the upload attempts say.
+		if ts, ok := tokens[t.Name]; ok {
+			h.Token = &ts
+			switch {
+			case ts.Status == metatoken.StatusExpired:
+				h.Status = "down"
+			case ts.Status == metatoken.StatusExpiring && h.Status != "down":
+				h.Status = "degraded"
+			}
 		}
 
 		healths = append(healths, h)

@@ -19,6 +19,7 @@ import (
 	"github.com/LNA-DEV/HomePageCompanion/interactions"
 	"github.com/LNA-DEV/HomePageCompanion/inventory"
 	"github.com/LNA-DEV/HomePageCompanion/logger"
+	"github.com/LNA-DEV/HomePageCompanion/metatoken"
 	"github.com/LNA-DEV/HomePageCompanion/models"
 	"github.com/LNA-DEV/HomePageCompanion/routing"
 	"github.com/LNA-DEV/HomePageCompanion/webmention"
@@ -52,7 +53,15 @@ func main() {
 	// Data migrations (must run before schema AutoMigrate so column renames are applied first)
 	database.RunMigrations()
 
-	database.MigrateModels([]interface{}{models.Webmention{}, models.AutoUploadItem{}, models.VAPIDKey{}, models.NotificationSubscription{}, models.Feed{}, models.FeedItem{}, models.Author{}, models.Category{}, models.Interaction{}, models.NativeLike{}, models.UploadAttempt{}, models.MicroblogPost{}, models.MicroblogPublication{}, models.MicroblogComment{}, models.Trip{}, models.TripStop{}, models.TripPhoto{}, models.RouteGeometry{}, models.BasemapVersion{}, models.BasemapPart{}})
+	database.MigrateModels([]interface{}{models.Webmention{}, models.AutoUploadItem{}, models.VAPIDKey{}, models.NotificationSubscription{}, models.Feed{}, models.FeedItem{}, models.Author{}, models.Category{}, models.Interaction{}, models.NativeLike{}, models.UploadAttempt{}, models.MicroblogPost{}, models.MicroblogPublication{}, models.MicroblogComment{}, models.Trip{}, models.TripStop{}, models.TripPhoto{}, models.RouteGeometry{}, models.BasemapVersion{}, models.BasemapPart{}, models.PlatformToken{}})
+
+	// Instagram/Threads tokens: from here on every config load puts the
+	// stored, refreshed token in place of the .env one. The first load ran
+	// before the database existed, so load once more
+	// (docs/concepts/meta-token-refresh.md).
+	metatoken.Init()
+	config.AfterLoad = metatoken.Apply
+	config.LoadConfig()
 
 	// Inventory
 	inventory.PopulateDatabase()
@@ -90,7 +99,9 @@ func main() {
 	}
 	c.AddFunc("0 30 4 * * *", basemap.Cleanup)
 	c.AddFunc("0 45 4 * * *", func() { gbif.Default.Evict() })
+	c.AddFunc("0 20 3 * * *", metatoken.RunDue)
 	c.Start()
+	time.AfterFunc(time.Minute, metatoken.RunDue)
 
 	// Router config
 	router := gin.Default()
@@ -144,6 +155,9 @@ func main() {
 	routing.RegisterRoutes(api, validateAPIKey())
 	basemap.RegisterRoutes(api, validateAPIKey())
 	gbif.RegisterRoutes(api)
+
+	// Instagram/Threads token status and "refresh now" (admin)
+	metatoken.RegisterRoutes(api, validateAPIKey())
 
 	// Health check
 	router.GET("/health", health)

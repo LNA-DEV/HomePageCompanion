@@ -7,6 +7,8 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+
+	"github.com/LNA-DEV/HomePageCompanion/redact"
 )
 
 // MediaLikeCount returns the current `likes` insight value for a published
@@ -37,7 +39,7 @@ func MediaLikeCount(mediaID, accessToken string) (int, error) {
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return 0, err
+		return 0, redact.URLError(err)
 	}
 	defer resp.Body.Close()
 
