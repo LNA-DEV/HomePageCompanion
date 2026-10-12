@@ -319,7 +319,7 @@ getEntryToPublish
 - **Pixelfed:** whether a remote `@user@domain` in a caption sent through the API is resolved, linked and delivered. Also whether a Mastodon profile can be mentioned from Pixelfed (D5).
 - **Instagram:** what happens with a mention of an account that does not exist (error or plain text). What happens with a private or missing account in `user_tags` (error code, or whether the tag is just dropped). Whether a tag and a mention of the same person send one notification or two.
 - **Live test of the tagging path.** Today no one has `autotag: true`, and the owner is blocked by §5.5. A second test account per platform is needed, plus a local feed fixture as the datasource. The local config already has a Bluesky test account (`bskytestinglna.bsky.social`).
-- The production config (which Mastodon instance, whether the Bluesky username is a handle).
+- ~~The production config (which Mastodon instance, whether the Bluesky username is a handle).~~ Answered in §12, *Production config*: no Mastodon target; the Bluesky username was an email and is the handle now.
 
 ## 12. Implementation log
 
@@ -425,3 +425,12 @@ What was built per stage, and where the code differs from the text above. Nothin
   - Over the limit, the alt text is cut at a sentence or word before the caption, instead of cutting both together in the middle of a word.
 - Turning on `tagModels` for a connection makes network calls only when someone in the photo has `autotag="true"` and a profile for the target. Today no one has.
 - Next: the live tests from §11, with a test account per platform and a local feed fixture as the datasource.
+
+### Production config (2026-10-12)
+
+`homepage/companion/config.yaml` in the Web-Services repository, changed there, not committed:
+
+- `tagModels: true` on all four connections (`pixelfed`, `bluesky`, `instagram`, `threads`), next to `includeAltText` and `addExifToCaption`. `modelsPrefix`/`modelsAnd` stay unset: the feed is the English one.
+- There is **no Mastodon target**, so §3.1 and `maxCaptionLength` do not matter in production.
+- **The Bluesky username was an email** (`bluesky@lna-dev.net`). The self-lookup `getProfile(target.Username)` fails on it, so Bluesky would have had no mentions (§5.5). Changed to the handle, `username: lna-dev.net` (resolves to `did:plc:2svaidgd2rfpeu5u7kvau3ci`). Every other use of the field is `blueskyapi.Login`, which takes a handle as well, and the admin target link `https://bsky.app/profile/<username>` (`src/admin/handlers.go:626`), which only works with the handle.
+- With today's data the switch changes nothing: no one has `autotag="true"`.
