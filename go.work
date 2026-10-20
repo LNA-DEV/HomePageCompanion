@@ -11,6 +11,7 @@ use (
 	./modules/interactions
 	./modules/mastodon
 	./modules/media
+	./modules/microblog
 	./modules/pixelfed
 	./modules/rss
 	./modules/threads
