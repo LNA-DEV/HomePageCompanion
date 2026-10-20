@@ -1,0 +1,8 @@
+go 1.26.0
+
+use (
+	.
+	./modules/blob-fs
+	./modules/blob-s3
+	./modules/db-sqlite
+)

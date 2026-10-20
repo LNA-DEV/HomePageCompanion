@@ -15,7 +15,7 @@ if [[ -n "$exceptions_file" && -f "$exceptions_file" ]]; then
 	done <"$exceptions_file"
 fi
 
-module="$(go list -m)"
+module="$(awk '/^module /{print $2; exit}' go.mod)"
 missing=()
 while read -r pkg tests xtests; do
 	rel="${pkg#"$module"}"
