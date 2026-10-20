@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"math"
 	"os"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -225,11 +226,12 @@ func (k *Keeper) Status() Status {
 }
 
 // LooksExpired matches Meta's answer for a dead token: OAuthException code
-// 190, or the word "expired".
+// 190 (not 1900 or 19000), or the word "expired".
 func LooksExpired(msg string) bool {
-	lower := strings.ToLower(msg)
-	return strings.Contains(lower, "expired") || strings.Contains(lower, `"code":190`)
+	return strings.Contains(strings.ToLower(msg), "expired") || code190.MatchString(msg)
 }
+
+var code190 = regexp.MustCompile(`"code"\s*:\s*190\b`)
 
 // SetClock replaces the clock; for tests.
 func (k *Keeper) SetClock(now func() time.Time) { k.now = now }

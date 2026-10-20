@@ -16,9 +16,29 @@ permissions:
 jobs:
   go:
     runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: '**/go.sum'
+      - name: go vet
+        run: scripts/go-each.sh vet ./...
+      - name: go test
+        run: scripts/go-each.sh test -race ./...
+      - name: every package has tests
+        run: scripts/check-tests-each.sh
+      - name: every module builds on its own
+        run: GOWORK=off scripts/go-each.sh build ./...
+
+  # The pre-module companion, until it is removed.
+  go-legacy:
+    runs-on: ubuntu-latest
     defaults:
       run:
         working-directory: src
+    env:
+      GOWORK: 'off'
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-go@v5
@@ -52,7 +72,7 @@ jobs:
 
   image-companion:
     if: github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
-    needs: [go, web]
+    needs: [go, go-legacy, web]
     runs-on: ubuntu-latest
     env:
       CONTAINER_NAME: home-page-companion
@@ -70,7 +90,7 @@ jobs:
 
   image-web:
     if: github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
-    needs: [go, web]
+    needs: [go, go-legacy, web]
     runs-on: ubuntu-latest
     permissions:
       contents: read
