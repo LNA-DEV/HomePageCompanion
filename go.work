@@ -5,4 +5,6 @@ use (
 	./modules/blob-fs
 	./modules/blob-s3
 	./modules/db-sqlite
+	./modules/mastodon
+	./modules/rss
 )

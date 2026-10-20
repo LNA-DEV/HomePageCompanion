@@ -34,6 +34,12 @@ type Lister interface {
 	ListPosts(ctx context.Context) ([]ListedPost, error)
 }
 
+// Deleter is the optional delete operation of social.publisher/v1. A post
+// that is already gone counts as deleted.
+type Deleter interface {
+	Delete(ctx context.Context, ref Result) error
+}
+
 // Interactions reads what happened to a published post.
 type Interactions interface {
 	GetStats(ctx context.Context, ref Result) (Stats, error)
