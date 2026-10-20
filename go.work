@@ -8,6 +8,7 @@ use (
 	./modules/bluesky
 	./modules/db-sqlite
 	./modules/instagram
+	./modules/interactions
 	./modules/mastodon
 	./modules/media
 	./modules/pixelfed
