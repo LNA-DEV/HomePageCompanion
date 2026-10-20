@@ -4,7 +4,11 @@ use (
 	.
 	./modules/blob-fs
 	./modules/blob-s3
+	./modules/bluesky
 	./modules/db-sqlite
+	./modules/instagram
 	./modules/mastodon
+	./modules/pixelfed
 	./modules/rss
+	./modules/threads
 )
