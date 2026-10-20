@@ -219,6 +219,20 @@ func (f *FakeRouter) Route(_ context.Context, mode string, pts []geo.Point) (geo
 	return geo.Route{Points: out, Source: "fake"}, nil
 }
 
+// Fail makes the following routes fail with err (nil: succeed again).
+func (f *FakeRouter) Fail(err error) {
+	f.mu.Lock()
+	f.Err = err
+	f.mu.Unlock()
+}
+
+// CallCount is how often Route was called.
+func (f *FakeRouter) CallCount() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.Calls
+}
+
 // FakeNotifier records messages.
 type FakeNotifier struct {
 	mu   sync.Mutex

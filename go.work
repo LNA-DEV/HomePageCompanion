@@ -16,6 +16,7 @@ use (
 	./modules/routing
 	./modules/rss
 	./modules/threads
+	./modules/trips
 	./modules/webmention
 	./modules/webpush
 )
