@@ -113,6 +113,13 @@ func BlobConformance(t *testing.T, b companion.Bucket, part int) {
 		if ups, _ := b.ListUploads(ctx, "m/"); len(ups) != 0 {
 			t.Fatalf("uploads left: %+v", ups)
 		}
+		// An aborted upload takes no more parts, and says so.
+		if _, err := b.UploadPart(ctx, "m/aborted.bin", id2, 1, []byte("x")); !errors.Is(err, companion.ErrUploadGone) {
+			t.Fatalf("part of an aborted upload: %v, want ErrUploadGone", err)
+		}
+		if err := b.CompleteUpload(ctx, "m/aborted.bin", id2, []companion.CompletedPart{{Number: 1, ETag: e1}}); !errors.Is(err, companion.ErrUploadGone) {
+			t.Fatalf("completing an aborted upload: %v, want ErrUploadGone", err)
+		}
 	})
 
 	t.Run("cleanup", func(t *testing.T) {

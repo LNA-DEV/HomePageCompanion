@@ -147,3 +147,13 @@ type Metrics interface {
 
 // ErrNotFound is returned by a Bucket for a missing object.
 var ErrNotFound = errors.New("not found")
+
+// ErrUploadGone is returned by a Bucket when a multipart upload takes no
+// more parts: it was aborted or completed, or another set of credentials
+// started it (S3 then answers AccessDenied). Retrying does not help; start
+// a new upload.
+var ErrUploadGone = errors.New("upload no longer usable")
+
+// ErrDenied is returned by a Bucket when the store refuses the credentials
+// or the bucket does not exist. Retrying does not help.
+var ErrDenied = errors.New("the store refused the credentials or the bucket")

@@ -241,7 +241,7 @@ func (d *Dir) CreateUpload(_ context.Context, key, _ string) (string, error) {
 func (d *Dir) UploadPart(_ context.Context, _, uploadID string, number int32, data []byte) (string, error) {
 	dir := d.uploadDir(uploadID)
 	if _, err := os.Stat(dir); err != nil {
-		return "", fmt.Errorf("no such upload %s", uploadID)
+		return "", fmt.Errorf("%w: %s", companion.ErrUploadGone, uploadID)
 	}
 	name := filepath.Join(dir, fmt.Sprintf("%05d", number))
 	if err := os.WriteFile(name, data, 0o644); err != nil {
@@ -256,6 +256,9 @@ func (d *Dir) CompleteUpload(_ context.Context, key, uploadID string, parts []co
 		return err
 	}
 	dir := d.uploadDir(uploadID)
+	if _, err := os.Stat(dir); err != nil {
+		return fmt.Errorf("%w: %s", companion.ErrUploadGone, uploadID)
+	}
 	dst := d.path(full)
 	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
 		return err

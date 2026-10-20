@@ -2,14 +2,18 @@ package blobs3
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http/httptest"
 	"os"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/LNA-DEV/HomePageCompanion/companion"
 	"github.com/LNA-DEV/HomePageCompanion/companiontest"
+	"github.com/aws/smithy-go"
 	"github.com/johannesboyne/gofakes3"
 	"github.com/johannesboyne/gofakes3/backend/s3mem"
 )
@@ -69,4 +73,37 @@ func TestConformanceAgainstFakeS3(t *testing.T) {
 		t.Fatal(err)
 	}
 	companiontest.BlobConformance(t, NewBucket(client, name, "home-page-companion/test"), 5<<20)
+}
+
+func TestClassifyMarksWhatNoRetryFixes(t *testing.T) {
+	api := func(code string) error { return &smithy.GenericAPIError{Code: code, Message: "m"} }
+	for _, c := range []struct {
+		err    error
+		upload bool
+		want   error
+	}{
+		{api("NoSuchUpload"), true, companion.ErrUploadGone},
+		{api("AccessDenied"), true, companion.ErrUploadGone},
+		{api("AccessDenied"), false, companion.ErrDenied},
+		{api("InvalidAccessKeyId"), false, companion.ErrDenied},
+		{api("SignatureDoesNotMatch"), true, companion.ErrDenied},
+		{api("NoSuchBucket"), false, companion.ErrDenied},
+		{api("SlowDown"), true, nil},
+		{errors.New("connection reset"), true, nil},
+	} {
+		got := classify(c.err, c.upload)
+		if c.want == nil {
+			if got != c.err {
+				t.Errorf("%v: changed to %v", c.err, got)
+			}
+			continue
+		}
+		var ae smithy.APIError
+		if !errors.Is(got, c.want) || !errors.As(got, &ae) || !strings.Contains(got.Error(), ae.ErrorCode()) {
+			t.Errorf("%v (upload %v): %v, want %v with the S3 error inside", c.err, c.upload, got, c.want)
+		}
+	}
+	if classify(nil, true) != nil {
+		t.Error("nil is an error")
+	}
 }

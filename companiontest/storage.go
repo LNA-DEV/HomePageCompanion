@@ -269,7 +269,7 @@ func (b *memBucket) UploadPart(_ context.Context, _, id string, n int32, data []
 	defer b.m.mu.Unlock()
 	u, ok := b.m.uploads[id]
 	if !ok {
-		return "", fmt.Errorf("no such upload %s", id)
+		return "", fmt.Errorf("%w: %s", companion.ErrUploadGone, id)
 	}
 	u.parts[n] = append([]byte(nil), data...)
 	return fmt.Sprintf(`"%d-%d"`, n, len(data)), nil
@@ -280,7 +280,7 @@ func (b *memBucket) CompleteUpload(_ context.Context, _, id string, parts []comp
 	defer b.m.mu.Unlock()
 	u, ok := b.m.uploads[id]
 	if !ok {
-		return fmt.Errorf("no such upload %s", id)
+		return fmt.Errorf("%w: %s", companion.ErrUploadGone, id)
 	}
 	sort.Slice(parts, func(i, j int) bool { return parts[i].Number < parts[j].Number })
 	var all []byte

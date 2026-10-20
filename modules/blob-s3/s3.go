@@ -157,6 +157,29 @@ func notFound(err error) bool {
 	return errors.As(err, &nf) || errors.As(err, &nk) || (errors.As(err, &ae) && (ae.ErrorCode() == "NotFound" || ae.ErrorCode() == "NoSuchKey"))
 }
 
+// classify marks the answers no retry fixes: an upload that takes no more
+// parts (NoSuchUpload; AccessDenied on an upload started with other
+// credentials) and refused credentials or a missing bucket. The S3 error
+// stays inside, for errors.As and the message.
+func classify(err error, upload bool) error {
+	var ae smithy.APIError
+	if err == nil || !errors.As(err, &ae) {
+		return err
+	}
+	switch ae.ErrorCode() {
+	case "NoSuchUpload":
+		return fmt.Errorf("%w: %w", companion.ErrUploadGone, err)
+	case "AccessDenied":
+		if upload {
+			return fmt.Errorf("%w: %w", companion.ErrUploadGone, err)
+		}
+		return fmt.Errorf("%w: %w", companion.ErrDenied, err)
+	case "InvalidAccessKeyId", "SignatureDoesNotMatch", "NoSuchBucket":
+		return fmt.Errorf("%w: %w", companion.ErrDenied, err)
+	}
+	return err
+}
+
 func (b *Bucket) Put(ctx context.Context, key string, r io.Reader, size int64, contentType string) error {
 	in := &s3.PutObjectInput{Bucket: aws.String(b.Name), Key: aws.String(b.full(key)), Body: r}
 	if size >= 0 {
@@ -173,7 +196,7 @@ func (b *Bucket) Put(ctx context.Context, key string, r io.Reader, size int64, c
 		in.Body, in.ContentLength = bytes.NewReader(data), aws.Int64(int64(len(data)))
 	}
 	_, err := b.Client.PutObject(ctx, in)
-	return err
+	return classify(err, false)
 }
 
 func (b *Bucket) Get(ctx context.Context, key string) (io.ReadCloser, companion.ObjectInfo, error) {
@@ -182,7 +205,7 @@ func (b *Bucket) Get(ctx context.Context, key string) (io.ReadCloser, companion.
 		if notFound(err) {
 			return nil, companion.ObjectInfo{}, companion.ErrNotFound
 		}
-		return nil, companion.ObjectInfo{}, err
+		return nil, companion.ObjectInfo{}, classify(err, false)
 	}
 	info := companion.ObjectInfo{Key: key, Size: aws.ToInt64(out.ContentLength), ContentType: aws.ToString(out.ContentType),
 		ModTime: aws.ToTime(out.LastModified), ETag: aws.ToString(out.ETag)}
@@ -195,7 +218,7 @@ func (b *Bucket) Stat(ctx context.Context, key string) (companion.ObjectInfo, er
 		if notFound(err) {
 			return companion.ObjectInfo{}, companion.ErrNotFound
 		}
-		return companion.ObjectInfo{}, err
+		return companion.ObjectInfo{}, classify(err, false)
 	}
 	return companion.ObjectInfo{Key: key, Size: aws.ToInt64(out.ContentLength), ContentType: aws.ToString(out.ContentType),
 		ModTime: aws.ToTime(out.LastModified), ETag: aws.ToString(out.ETag)}, nil
@@ -211,7 +234,7 @@ func (b *Bucket) ReadRange(ctx context.Context, key string, offset, length int64
 		if notFound(err) {
 			return nil, companion.ErrNotFound
 		}
-		return nil, err
+		return nil, classify(err, false)
 	}
 	defer out.Body.Close()
 	return io.ReadAll(out.Body)
@@ -227,7 +250,7 @@ func (b *Bucket) List(ctx context.Context, prefix string) ([]companion.ObjectInf
 	for {
 		page, err := b.Client.ListObjectsV2(ctx, in)
 		if err != nil {
-			return nil, err
+			return nil, classify(err, false)
 		}
 		for _, o := range page.Contents {
 			out = append(out, companion.ObjectInfo{Key: b.rel(aws.ToString(o.Key)), Size: aws.ToInt64(o.Size),
@@ -242,7 +265,7 @@ func (b *Bucket) List(ctx context.Context, prefix string) ([]companion.ObjectInf
 
 func (b *Bucket) Delete(ctx context.Context, key string) error {
 	_, err := b.Client.DeleteObject(ctx, &s3.DeleteObjectInput{Bucket: aws.String(b.Name), Key: aws.String(b.full(key))})
-	return err
+	return classify(err, false)
 }
 
 func (b *Bucket) CreateUpload(ctx context.Context, key, contentType string) (string, error) {
@@ -252,7 +275,7 @@ func (b *Bucket) CreateUpload(ctx context.Context, key, contentType string) (str
 	}
 	out, err := b.Client.CreateMultipartUpload(ctx, in)
 	if err != nil {
-		return "", err
+		return "", classify(err, false)
 	}
 	return aws.ToString(out.UploadId), nil
 }
@@ -267,7 +290,7 @@ func (b *Bucket) UploadPart(ctx context.Context, key, uploadID string, number in
 		ContentLength: aws.Int64(int64(len(data))),
 	})
 	if err != nil {
-		return "", err
+		return "", classify(err, true)
 	}
 	return aws.ToString(out.ETag), nil
 }
@@ -283,14 +306,14 @@ func (b *Bucket) CompleteUpload(ctx context.Context, key, uploadID string, parts
 		UploadId:        aws.String(uploadID),
 		MultipartUpload: &types.CompletedMultipartUpload{Parts: cp},
 	})
-	return err
+	return classify(err, true)
 }
 
 func (b *Bucket) AbortUpload(ctx context.Context, key, uploadID string) error {
 	_, err := b.Client.AbortMultipartUpload(ctx, &s3.AbortMultipartUploadInput{
 		Bucket: aws.String(b.Name), Key: aws.String(b.full(key)), UploadId: aws.String(uploadID),
 	})
-	return err
+	return classify(err, true)
 }
 
 func (b *Bucket) ListUploads(ctx context.Context, prefix string) ([]companion.Upload, error) {
@@ -303,7 +326,7 @@ func (b *Bucket) ListUploads(ctx context.Context, prefix string) ([]companion.Up
 	for {
 		page, err := b.Client.ListMultipartUploads(ctx, in)
 		if err != nil {
-			return nil, err
+			return nil, classify(err, false)
 		}
 		for _, u := range page.Uploads {
 			out = append(out, companion.Upload{Key: b.rel(aws.ToString(u.Key)), UploadID: aws.ToString(u.UploadId), Initiated: aws.ToTime(u.Initiated)})
