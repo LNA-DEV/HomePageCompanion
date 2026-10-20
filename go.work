@@ -13,6 +13,7 @@ use (
 	./modules/media
 	./modules/microblog
 	./modules/pixelfed
+	./modules/routing
 	./modules/rss
 	./modules/threads
 	./modules/webmention
