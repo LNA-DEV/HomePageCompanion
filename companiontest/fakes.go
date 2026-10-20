@@ -61,7 +61,7 @@ func (f *FakePublisher) Describe(context.Context) (social.Limits, error) {
 	if max == 0 {
 		max = 500
 	}
-	return social.Limits{Platform: p, MaxLength: max, RequiresImage: f.RequiresImage, MentionProfiles: []string{p}}, nil
+	return social.Limits{Platform: p, MaxLength: max, RequiresImage: f.RequiresImage, MentionProfiles: []string{p}, LinkCard: "auto"}, nil
 }
 
 func (f *FakePublisher) Preview(_ context.Context, p social.Post) (social.Rendered, error) {

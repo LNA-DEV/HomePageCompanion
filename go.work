@@ -2,12 +2,14 @@ go 1.26.0
 
 use (
 	.
+	./modules/autoupload
 	./modules/blob-fs
 	./modules/blob-s3
 	./modules/bluesky
 	./modules/db-sqlite
 	./modules/instagram
 	./modules/mastodon
+	./modules/media
 	./modules/pixelfed
 	./modules/rss
 	./modules/threads
