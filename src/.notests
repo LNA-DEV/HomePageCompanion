@@ -3,10 +3,7 @@
 models
 # Not covered yet; each goes once it has tests:
 backfill
-database
 interactions
-inventory
 logger
 microblog
-webmention
 webpush
