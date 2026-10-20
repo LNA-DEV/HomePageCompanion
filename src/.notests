@@ -1,0 +1,12 @@
+# Packages allowed without a test file (modular-architecture.md §6, gate 4).
+# Pure data types:
+models
+# Not covered yet; each goes once it has tests:
+backfill
+database
+interactions
+inventory
+logger
+microblog
+webmention
+webpush
