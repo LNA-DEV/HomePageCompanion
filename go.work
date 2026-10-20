@@ -15,4 +15,6 @@ use (
 	./modules/pixelfed
 	./modules/rss
 	./modules/threads
+	./modules/webmention
+	./modules/webpush
 )
