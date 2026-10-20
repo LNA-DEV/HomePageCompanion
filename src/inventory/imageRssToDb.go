@@ -1,6 +1,7 @@
 package inventory
 
 import (
+	"fmt"
 	"log"
 	"time"
 
@@ -10,11 +11,14 @@ import (
 	"gorm.io/gorm"
 )
 
-func imageRssToDatabase(feedURL string, feedName string) {
+// imageRssToDatabase mirrors one image feed into the database. A feed that
+// cannot be fetched or stored returns an error and leaves the stored items as
+// they are; the next run tries again.
+func imageRssToDatabase(feedURL string, feedName string) error {
 	parser := gofeed.NewParser()
 	parsedFeed, err := parser.ParseURL(feedURL)
 	if err != nil {
-		log.Fatalf("Error parsing feed: %v", err)
+		return fmt.Errorf("fetch feed %s: %w", feedName, err)
 	}
 
 	var authorsFeed []models.Author
@@ -43,13 +47,13 @@ func imageRssToDatabase(feedURL string, feedName string) {
 	err = database.Db.Where("feed_url = ?", feedURL).First(&existingFeed).Error
 	if err == gorm.ErrRecordNotFound {
 		if err := database.Db.Create(&feed).Error; err != nil {
-			log.Fatalf("Error saving feed: %v", err)
+			return fmt.Errorf("save feed %s: %w", feedName, err)
 		}
 	} else if err == nil {
 		feed.ID = existingFeed.ID
 		database.Db.Model(&existingFeed).Updates(feed)
 	} else {
-		log.Fatalf("Error querying feed: %v", err)
+		return fmt.Errorf("query feed %s: %w", feedName, err)
 	}
 
 	// Track seen GUIDs
@@ -98,7 +102,7 @@ func imageRssToDatabase(feedURL string, feedName string) {
 			GUID:        item.GUID,
 			Authors:     authors,
 			Categories:  categories,
-			ImageUrl:    item.Image.URL,
+			ImageUrl:    imageURL(item),
 			ItemType:    "image",
 		}
 
@@ -131,4 +135,13 @@ func imageRssToDatabase(feedURL string, feedName string) {
 			}
 		}
 	}
+	return nil
+}
+
+// imageURL is the item's image, or "" for an item without one.
+func imageURL(item *gofeed.Item) string {
+	if item.Image == nil {
+		return ""
+	}
+	return item.Image.URL
 }
