@@ -1,6 +1,7 @@
 package database
 
 import (
+	"fmt"
 	"log"
 	"time"
 
@@ -26,8 +27,13 @@ func RegisterMigration(name string, fn MigrationFunc) {
 	registry = append(registry, migrationEntry{Name: name, Fn: fn})
 }
 
-func RunMigrations() {
-	Db.AutoMigrate(&Migration{})
+// RunMigrations applies every registered data migration not applied yet, each
+// in its own transaction. It runs before the schema AutoMigrate, so a
+// migration must cope with tables that do not exist yet.
+func RunMigrations() error {
+	if err := Db.AutoMigrate(&Migration{}); err != nil {
+		return err
+	}
 
 	for _, m := range registry {
 		var existing Migration
@@ -42,10 +48,10 @@ func RunMigrations() {
 			}
 			return tx.Create(&Migration{Name: m.Name, AppliedAt: time.Now()}).Error
 		})
-
 		if err != nil {
-			log.Fatalf("Migration %q failed: %v", m.Name, err)
+			return fmt.Errorf("migration %q: %w", m.Name, err)
 		}
 		log.Printf("Migration %s completed", m.Name)
 	}
+	return nil
 }
