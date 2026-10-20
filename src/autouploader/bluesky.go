@@ -11,6 +11,10 @@ import (
 )
 
 func publishBlueskyEntry(entry *gofeed.Item, target config.Target, caption string, credits []Credit) error {
+	imageURL, err := requireImage(entry, target.Platform)
+	if err != nil {
+		return err
+	}
 	session, err := blueskyapi.Login(target.Username, target.PAT)
 	if err != nil {
 		return err
@@ -18,7 +22,7 @@ func publishBlueskyEntry(entry *gofeed.Item, target config.Target, caption strin
 
 	altText := extractAltText(entry.Description)
 
-	imageBytes, err := downloadImage(entry.Image.URL)
+	imageBytes, err := downloadImage(imageURL)
 	if err != nil {
 		return err
 	}

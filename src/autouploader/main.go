@@ -325,6 +325,15 @@ func filterEntries(entries []*gofeed.Item, nameList []string) []*gofeed.Item {
 	return filtered
 }
 
+// requireImage returns the item's image URL, or an error for an item without
+// one (a blog post) on a platform that cannot post without an image.
+func requireImage(entry *gofeed.Item, platform string) (string, error) {
+	if entry.Image == nil || entry.Image.URL == "" {
+		return "", fmt.Errorf("%s: item %q has no image", platform, entry.GUID)
+	}
+	return entry.Image.URL, nil
+}
+
 func extractAltText(html string) string {
 	re := regexp.MustCompile(`alt="(.*?)"`)
 	match := re.FindStringSubmatch(html)

@@ -10,7 +10,11 @@ import (
 )
 
 func publishPixelfedEntry(entry *gofeed.Item, target config.Target, caption string) error {
-	imageBytes, err := downloadImage(entry.Image.URL)
+	imageURL, err := requireImage(entry, target.Platform)
+	if err != nil {
+		return err
+	}
+	imageBytes, err := downloadImage(imageURL)
 	if err != nil {
 		return err
 	}

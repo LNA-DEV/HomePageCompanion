@@ -19,6 +19,9 @@ const (
 )
 
 func publishInstagramEntry(entry *gofeed.Item, target config.Target, caption string, credits []Credit) error {
+	if _, err := requireImage(entry, target.Platform); err != nil {
+		return err
+	}
 	creationID, err := createInstagramContainer(entry, target, caption, credits)
 	if err != nil {
 		return fmt.Errorf("create media container: %w", err)

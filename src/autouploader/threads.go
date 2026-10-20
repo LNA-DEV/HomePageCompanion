@@ -20,8 +20,8 @@ const (
 // downsizing (imageresize) doesn't apply. We create the container, poll its
 // status until FINISHED, publish, then resolve the permalink for PostUrl.
 func publishThreadsEntry(entry *gofeed.Item, target config.Target, caption string) error {
-	if entry.Image == nil || entry.Image.URL == "" {
-		return fmt.Errorf("threads: entry %q has no image URL", entry.GUID)
+	if _, err := requireImage(entry, "threads"); err != nil {
+		return err
 	}
 
 	creationID, err := threadsapi.CreateImageContainer(target.AccountId, target.AccessToken, entry.Image.URL, caption)
