@@ -2,11 +2,16 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log"
+	"net"
 	"net/http"
+	"os"
 	"path/filepath"
 	"regexp"
+	"runtime/debug"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/LNA-DEV/HomePageCompanion/admin"
@@ -51,7 +56,9 @@ func main() {
 	// Database
 	database.LoadDatabase()
 	// Data migrations (must run before schema AutoMigrate so column renames are applied first)
-	database.RunMigrations()
+	if err := database.RunMigrations(); err != nil {
+		log.Fatalf("database: %v", err)
+	}
 
 	database.MigrateModels([]interface{}{models.Webmention{}, models.AutoUploadItem{}, models.VAPIDKey{}, models.NotificationSubscription{}, models.Feed{}, models.FeedItem{}, models.Author{}, models.Category{}, models.Interaction{}, models.NativeLike{}, models.UploadAttempt{}, models.MicroblogPost{}, models.MicroblogPublication{}, models.MicroblogComment{}, models.Trip{}, models.TripStop{}, models.TripPhoto{}, models.RouteGeometry{}, models.BasemapVersion{}, models.BasemapPart{}, models.PlatformToken{}})
 
@@ -73,7 +80,7 @@ func main() {
 	// and GBIF's density tiles are served from here (Home-Page
 	// docs/concepts/self-hosted-maps.md).
 	routing.Default.Start()
-	go routing.EnqueueAll(false) // legs saved before this existed, and failed ones
+	goSafe("routing backfill", func() { routing.EnqueueAll(false) }) // legs saved before this existed, and failed ones
 	if err := basemap.Init(context.Background()); err != nil {
 		log.Printf("%v — basemap disabled", err)
 	}
@@ -85,26 +92,34 @@ func main() {
 
 	for _, connection := range config.Data.Connections {
 		if connection.Cron != nil {
-			c.AddFunc(*connection.Cron, func() { autouploader.Publish(connection) })
+			if err := c.AddFunc(*connection.Cron, func() { autouploader.Publish(connection) }); err != nil {
+				log.Printf("cron: invalid schedule %q for connection %s: %v", *connection.Cron, connection.Name, err)
+			}
 		}
 	}
 
-	c.AddFunc("0 */5 * * * *", func() { config.LoadConfig() })
-	c.AddFunc("0 * */1 * * *", func() { inventory.PopulateDatabase() })
-	c.AddFunc("0 * * * * *", func() { interactions.RunTick() })
+	for _, s := range fixedSchedules {
+		if err := c.AddFunc(s.spec, s.run); err != nil {
+			log.Printf("cron: invalid schedule %q for %s: %v", s.spec, s.name, err)
+		}
+	}
 	if spec := basemap.Schedule(); spec != "" {
 		if err := c.AddFunc(spec, basemap.StartUpdate); err != nil {
 			log.Printf("basemap: invalid schedule %q: %v", spec, err)
 		}
 	}
-	c.AddFunc("0 30 4 * * *", basemap.Cleanup)
-	c.AddFunc("0 45 4 * * *", func() { gbif.Default.Evict() })
-	c.AddFunc("0 20 3 * * *", metatoken.RunDue)
 	c.Start()
 	time.AfterFunc(time.Minute, metatoken.RunDue)
 
 	// Router config
 	router := gin.Default()
+	proxies, err := trustedProxies(os.Getenv("TRUSTED_PROXIES"))
+	if err != nil {
+		log.Fatalf("TRUSTED_PROXIES: %v", err)
+	}
+	if err := router.SetTrustedProxies(proxies); err != nil {
+		log.Fatalf("TRUSTED_PROXIES: %v", err)
+	}
 
 	// Build regex pattern dynamically
 	subdomainRegex := regexp.MustCompile(`^https?://([a-z0-9-]+\.)*` + regexp.QuoteMeta(config.Data.Security.Domain) + `(:[0-9]+)?$`)
@@ -165,6 +180,23 @@ func main() {
 	router.Run(":8080")
 }
 
+// schedule is a job the companion runs on a fixed robfig/cron spec. robfig/cron
+// v1 has a seconds field: "0 0 * * * *" is hourly, "0 * * * * *" every minute.
+type schedule struct {
+	name string
+	spec string
+	run  func()
+}
+
+var fixedSchedules = []schedule{
+	{"config reload", "0 */5 * * * *", func() { config.LoadConfig() }},
+	{"inventory", "0 0 * * * *", func() { inventory.PopulateDatabase() }},
+	{"interactions", "0 * * * * *", func() { interactions.RunTick() }},
+	{"basemap cleanup", "0 30 4 * * *", func() { basemap.Cleanup() }},
+	{"gbif eviction", "0 45 4 * * *", func() { gbif.Default.Evict() }},
+	{"meta token refresh", "0 20 3 * * *", func() { metatoken.RunDue() }},
+}
+
 func broadcast(c *gin.Context) {
 	var notif models.Notification
 	if err := c.ShouldBindJSON(&notif); err != nil {
@@ -186,6 +218,9 @@ func getVapidPublicKey(c *gin.Context) {
 	c.Data(http.StatusOK, "application/text", jsonData)
 }
 
+// publish runs one upload; a variable so tests can replace it.
+var publish = autouploader.Publish
+
 func uploadNext(c *gin.Context) {
 	connectionName := c.Param("connectionName")
 
@@ -204,8 +239,51 @@ func uploadNext(c *gin.Context) {
 		return
 	}
 
-	go autouploader.Publish(connection)
+	goSafe("upload "+connectionName, func() { publish(connection) })
 	c.JSON(http.StatusAccepted, gin.H{"status": "publish scheduled", "connection": connectionName})
+}
+
+// goSafe runs fn in the background. A panic is logged with its stack and
+// ends only fn, never the companion.
+func goSafe(name string, fn func()) {
+	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				log.Printf("%s: panic: %v\n%s", name, r, debug.Stack())
+			}
+		}()
+		fn()
+	}()
+}
+
+// privateNetworks are trusted as proxies when TRUSTED_PROXIES is unset: the
+// compose network and the host gateway the reverse proxy comes from. A client
+// on the internet never has such an address, so it cannot pick its own IP.
+var privateNetworks = []string{"127.0.0.0/8", "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "::1/128", "fc00::/7"}
+
+// trustedProxies reads TRUSTED_PROXIES: comma-separated IPs or CIDRs whose
+// X-Forwarded-For is believed, "none" for no proxy, unset for the private
+// networks.
+func trustedProxies(env string) ([]string, error) {
+	env = strings.TrimSpace(env)
+	switch env {
+	case "":
+		return privateNetworks, nil
+	case "none":
+		return nil, nil
+	}
+	var out []string
+	for _, p := range strings.Split(env, ",") {
+		p = strings.TrimSpace(p)
+		if p == "" {
+			continue
+		}
+		if _, _, err := net.ParseCIDR(p); err != nil && net.ParseIP(p) == nil {
+			return nil, fmt.Errorf("%q is neither an IP nor a CIDR", p)
+		}
+		out = append(out, p)
+	}
+	return out, nil
 }
 
 var localhostRegex = regexp.MustCompile(`^https?://localhost(:[0-9]+)?$`)
@@ -224,12 +302,12 @@ func health(c *gin.Context) {
 }
 
 func triggerInteractionsFetch(c *gin.Context) {
-	go interactions.FetchAllThrottled()
+	goSafe("interactions fetch", interactions.FetchAllThrottled)
 	c.JSON(http.StatusAccepted, gin.H{"status": "Interactions fetch scheduled"})
 }
 
 func triggerBackfill(c *gin.Context) {
-	go backfill.RunBackfill()
+	goSafe("backfill", backfill.RunBackfill)
 	c.JSON(http.StatusOK, gin.H{"status": "Backfill started"})
 }
 
