@@ -2,6 +2,7 @@
 	import { onMount } from 'svelte';
 	import { api, type Webmention, type MiniFeedItem } from '$lib/api';
 	import { PageHeader, DataTable, Loading, StatsCard, SearchInput } from '$lib/components';
+	import { safeHref } from '$lib/utils';
 	import { ExternalLink } from 'lucide-svelte';
 
 	let webmentions = $state<Webmention[]>([]);
@@ -140,7 +141,7 @@
 						<div class="flex items-start justify-between gap-4">
 							<div class="flex-1 min-w-0">
 								<a
-									href={wm.Source}
+									href={safeHref(wm.Source)}
 									target="_blank"
 									rel="noopener noreferrer"
 									class="text-primary-600 dark:text-primary-400 hover:underline font-medium truncate block"
@@ -159,7 +160,7 @@
 										</a>
 									{:else}
 										<a
-											href={wm.Target}
+											href={safeHref(wm.Target)}
 											target="_blank"
 											rel="noopener noreferrer"
 											class="text-gray-700 dark:text-gray-300 hover:underline"

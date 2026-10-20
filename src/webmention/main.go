@@ -4,6 +4,7 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
 
 	"github.com/LNA-DEV/HomePageCompanion/database"
@@ -11,9 +12,14 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+// isValidURL admits absolute http and https URLs only.
 func isValidURL(str string) bool {
 	u, err := url.ParseRequestURI(str)
-	return err == nil && u.Scheme != "" && u.Host != ""
+	if err != nil || u.Host == "" {
+		return false
+	}
+	scheme := strings.ToLower(u.Scheme)
+	return scheme == "http" || scheme == "https"
 }
 
 func HandleWebmention(c *gin.Context) {
