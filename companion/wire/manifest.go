@@ -203,7 +203,7 @@ const LockFile = "companion.lock"
 // Lock is companion.lock: what hpc apply started, pinned. The core reads
 // the manifests and the confirmed grants from it.
 type Lock struct {
-	Version  int                       `json:"version"`
+	Version  int                      `json:"version"`
 	Services map[string]LockedService `json:"services"`
 }
 

@@ -229,11 +229,15 @@ func TestSignature(t *testing.T) {
 		t.Fatalf("valid signature refused: %v", err)
 	}
 	for name, check := range map[string]func() error{
-		"other body":     func() error { return wire.Verify(r, []byte(`{"text":"ho"}`), key, now) },
-		"other key":      func() error { return wire.Verify(r, []byte(`{"text":"hi"}`), []byte("other"), now) },
-		"too old":        func() error { return wire.Verify(r, []byte(`{"text":"hi"}`), key, now.Add(10*time.Minute)) },
-		"other instance": func() error { r2 := req("other", ""); r2.Header.Set(wire.SignatureHeader, r.Header.Get(wire.SignatureHeader)); return wire.Verify(r2, []byte(`{"text":"hi"}`), key, now) },
-		"unsigned":       func() error { return wire.Verify(req("main", ""), nil, key, now) },
+		"other body": func() error { return wire.Verify(r, []byte(`{"text":"ho"}`), key, now) },
+		"other key":  func() error { return wire.Verify(r, []byte(`{"text":"hi"}`), []byte("other"), now) },
+		"too old":    func() error { return wire.Verify(r, []byte(`{"text":"hi"}`), key, now.Add(10*time.Minute)) },
+		"other instance": func() error {
+			r2 := req("other", "")
+			r2.Header.Set(wire.SignatureHeader, r.Header.Get(wire.SignatureHeader))
+			return wire.Verify(r2, []byte(`{"text":"hi"}`), key, now)
+		},
+		"unsigned": func() error { return wire.Verify(req("main", ""), nil, key, now) },
 	} {
 		if err := check(); !errors.Is(err, wire.ErrBadSignature) {
 			t.Errorf("%s: %v", name, err)
