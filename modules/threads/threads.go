@@ -89,7 +89,7 @@ func (a *Account) refreshDue(ctx context.Context) error {
 	err := a.keeper.RunDue(ctx)
 	st := a.keeper.Status()
 	if a.Notify != nil && (st.Status == metatoken.StatusExpiring || st.Status == metatoken.StatusExpired) {
-		body := "The Threads token of " + a.ctx.InstanceName() + " has expired. Put a new one into .env."
+		body := "The Threads token of " + a.ctx.InstanceName() + " has expired. Connect the account again on its settings page, or put a new token into .env."
 		if st.Status == metatoken.StatusExpiring && st.DaysLeft != nil {
 			body = fmt.Sprintf("The Threads token of %s expires in %d days and could not be refreshed: %s", a.ctx.InstanceName(), *st.DaysLeft, st.LastError)
 		}

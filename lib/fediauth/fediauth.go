@@ -30,6 +30,10 @@ const AppName = "HomePageCompanion"
 
 // Conn is one instance's connection.
 type Conn struct {
+	// Revoke asks the server to revoke the token on Disconnect (POST
+	// /oauth/revoke). Pixelfed has no such endpoint.
+	Revoke bool
+
 	ctx    companion.Context
 	scopes []string
 	store  companion.OAuthStore
@@ -39,7 +43,7 @@ type Conn struct {
 
 // New prepares the connection of the instance ctx belongs to.
 func New(ctx companion.Context, scopes []string) *Conn {
-	return &Conn{ctx: ctx, scopes: scopes, store: companion.NewOAuthStore(ctx), now: time.Now}
+	return &Conn{Revoke: true, ctx: ctx, scopes: scopes, store: companion.NewOAuthStore(ctx), now: time.Now}
 }
 
 type app struct {
@@ -184,7 +188,7 @@ func (c *Conn) Disconnect(ctx context.Context, server string) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	a, ok, _ := c.store.Load()
-	if ok && a.ClientID != "" {
+	if ok && a.ClientID != "" && c.Revoke {
 		form := url.Values{"client_id": {a.ClientID}, "client_secret": {a.ClientSecret}, "token": {a.Token.AccessToken}}
 		if _, err := c.post(ctx, trim(server)+"/oauth/revoke", form); err != nil {
 			c.ctx.Log().Printf("%s: revoking the token: %v (forgotten anyway)", c.ctx.InstanceName(), err)

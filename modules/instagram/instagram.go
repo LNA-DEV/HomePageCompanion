@@ -46,10 +46,15 @@ const (
 	maxMentions = 20
 )
 
-// Account is one Instagram professional account.
+// Account is one Instagram professional account. Either its token comes
+// from the config (accessToken and accountId), or the account is connected
+// on the settings page through OAuth, with the Instagram app's ID and
+// secret (appId, appSecret).
 type Account struct {
 	AccountID   string `json:"accountId"`
 	AccessToken string `json:"accessToken" companion:"secret"`
+	AppID       string `json:"appId"`
+	AppSecret   string `json:"appSecret" companion:"secret"`
 	MaxLength   int    `json:"maxLength"` // 2000 when 0
 
 	Notify notify.Notifier `companion:"slot=notify"`
@@ -77,10 +82,81 @@ func (a *Account) Provision(ctx companion.Context) error {
 }
 
 func (a *Account) Validate() error {
-	if a.AccountID == "" {
-		return errors.New("accountId is required")
+	if (a.AppID == "") != (a.AppSecret == "") {
+		return errors.New("appId and appSecret go together")
 	}
 	return nil
+}
+
+// accountID is the connected account's ID, or else the configured one.
+func (a *Account) accountID() string {
+	if _, id, ok := a.keeper.Connected(); ok && id != "" {
+		return id
+	}
+	return a.AccountID
+}
+
+// account is the token and account ID to post with.
+func (a *Account) account() (token, id string, err error) {
+	token, id = a.token(), a.accountID()
+	if token == "" || id == "" {
+		return "", "", fmt.Errorf("instagram %s: %w: connect it on its settings page, or set accessToken and accountId", a.ctx.InstanceName(), social.ErrNotConnected)
+	}
+	return token, id, nil
+}
+
+func (a *Account) OAuthClient(_ context.Context, redirectURI string) (companion.OAuthClient, error) {
+	if a.AppID == "" {
+		return companion.OAuthClient{}, fmt.Errorf("set appId and appSecret, the Instagram app ID and secret under API setup with Instagram login, and register %s there as an OAuth redirect URI", redirectURI)
+	}
+	return companion.OAuthClient{AuthURL: api.AuthorizeURL, TokenURL: api.TokenURL, ClientID: a.AppID, ClientSecret: a.AppSecret,
+		Scopes: api.Scopes, ScopeSep: ",", Params: map[string]string{"enable_fb_login": "0", "force_reauth": "true"}}, nil
+}
+
+// OAuthConnect trades the login's short-lived token for a long-lived one
+// and hands that to the keeper, which refreshes it from now on.
+func (a *Account) OAuthConnect(ctx context.Context, _ companion.OAuthClient, tok companion.OAuthToken) (string, error) {
+	long, err := api.ExchangeLongLived(ctx, a.AppSecret, tok.AccessToken)
+	if err != nil {
+		return "", err
+	}
+	p, err := api.GetProfile(ctx, long.AccessToken)
+	if err != nil {
+		return "", err
+	}
+	expires := time.Now().Add(time.Duration(long.ExpiresIn) * time.Second)
+	if long.ExpiresIn <= 0 {
+		expires = time.Now().Add(60 * 24 * time.Hour)
+	}
+	name := "@" + p.Username
+	if err := a.keeper.Connect(long.AccessToken, expires, name, p.UserID); err != nil {
+		return "", err
+	}
+	a.forgetSelf()
+	return name, nil
+}
+
+func (a *Account) OAuthState() companion.OAuthState {
+	st := a.keeper.Status()
+	if st.Source != "connected" {
+		return companion.OAuthState{}
+	}
+	out := companion.OAuthState{Connected: true, Account: st.Account, ExpiresAt: st.ExpiresAt}
+	if a.AccessToken != "" {
+		out.Note = "A new accessToken in the settings replaces the connected account."
+	}
+	return out
+}
+
+func (a *Account) OAuthDisconnect(context.Context) error {
+	a.forgetSelf()
+	return a.keeper.Disconnect()
+}
+
+func (a *Account) forgetSelf() {
+	a.selfMu.Lock()
+	a.self = ""
+	a.selfMu.Unlock()
 }
 
 // SetPollGap shortens the status polling; for tests.
@@ -98,7 +174,7 @@ func (a *Account) refreshDue(ctx context.Context) error {
 	err := a.keeper.RunDue(ctx)
 	st := a.keeper.Status()
 	if a.Notify != nil && (st.Status == metatoken.StatusExpiring || st.Status == metatoken.StatusExpired) {
-		body := "The Instagram token of " + a.ctx.InstanceName() + " has expired. Put a new one into .env."
+		body := "The Instagram token of " + a.ctx.InstanceName() + " has expired. Connect the account again on its settings page, or put a new token into .env."
 		if st.Status == metatoken.StatusExpiring && st.DaysLeft != nil {
 			body = fmt.Sprintf("The Instagram token of %s expires in %d days and could not be refreshed: %s", a.ctx.InstanceName(), *st.DaysLeft, st.LastError)
 		}
@@ -114,7 +190,7 @@ func (a *Account) Describe(context.Context) (social.Limits, error) {
 	if max <= 0 {
 		max = 2000
 	}
-	return social.Limits{Platform: "instagram", Account: a.AccountID, MaxLength: max, MaxImages: 1, RequiresImage: true,
+	return social.Limits{Platform: "instagram", Account: a.accountID(), MaxLength: max, MaxImages: 1, RequiresImage: true,
 		MentionProfiles: []string{"instagram"}, MaxMentions: maxMentions}, nil
 }
 
@@ -170,14 +246,17 @@ func (a *Account) Publish(ctx context.Context, p social.Post) (social.Result, er
 	if len(p.Images) == 0 || p.Images[0].URL == "" {
 		return social.Result{}, fmt.Errorf("instagram: %w", social.ErrNeedsImage)
 	}
-	tok := a.token()
+	tok, accountID, err := a.account()
+	if err != nil {
+		return social.Result{}, err
+	}
 	img := p.Images[0].URL
 	tags := userTags(p.Mentions)
-	creationID, err := api.CreateMediaContainer(a.AccountID, tok, img, caption(p), tags)
+	creationID, err := api.CreateMediaContainer(accountID, tok, img, caption(p), tags)
 	var se *api.StatusError
 	if err != nil && tags != nil && errors.As(err, &se) && se.StatusCode >= 400 && se.StatusCode < 500 {
 		a.ctx.Log().Printf("%s: %s: photo tags rejected, retrying without them: %v", a.ctx.InstanceName(), p.ItemID, err)
-		creationID, err = api.CreateMediaContainer(a.AccountID, tok, img, caption(p), nil)
+		creationID, err = api.CreateMediaContainer(accountID, tok, img, caption(p), nil)
 	}
 	if err != nil {
 		return social.Result{}, fmt.Errorf("create media container: %w", wrap(err))
@@ -201,7 +280,7 @@ func (a *Account) Publish(ctx context.Context, p social.Post) (social.Result, er
 		}
 		return social.Result{}, fmt.Errorf("media not ready after %d attempts (last status: %q)", maxStatusPolls, status)
 	}
-	id, err := api.PublishContainer(a.AccountID, tok, creationID)
+	id, err := api.PublishContainer(accountID, tok, creationID)
 	if err != nil {
 		return social.Result{}, fmt.Errorf("publish container: %w", wrap(err))
 	}
@@ -259,7 +338,11 @@ func (a *Account) ListReplies(context.Context, social.Result) ([]social.Reply, e
 }
 
 func (a *Account) ListPosts(context.Context) ([]social.ListedPost, error) {
-	media, err := api.ListMedia(a.AccountID, a.token())
+	tok, accountID, err := a.account()
+	if err != nil {
+		return nil, err
+	}
+	media, err := api.ListMedia(accountID, tok)
 	if err != nil {
 		return nil, wrap(err)
 	}
@@ -278,6 +361,8 @@ var (
 	_ social.Publisher    = (*Account)(nil)
 	_ social.Interactions = (*Account)(nil)
 	_ social.Lister       = (*Account)(nil)
+
+	_ companion.OAuthConnector = (*Account)(nil)
 )
 
 func routes(mc companion.ModuleContext, r *companion.Router) {

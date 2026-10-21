@@ -58,6 +58,9 @@ func newPassport(t *testing.T) *passport {
 	mux.HandleFunc("GET /api/v1/accounts/verify_credentials", func(w http.ResponseWriter, r *http.Request) {
 		io.WriteString(w, `{"id":"9","username":"lna"}`)
 	})
+	mux.HandleFunc("/oauth/revoke", func(w http.ResponseWriter, r *http.Request) {
+		t.Error("Pixelfed has no revoke endpoint")
+	})
 	mux.HandleFunc("POST /api/v1/media", func(w http.ResponseWriter, r *http.Request) {
 		io.WriteString(w, `{"id":"m1"}`)
 	})
@@ -108,5 +111,8 @@ func TestConnectAndRefresh(t *testing.T) {
 	_, err := a.Publish(context.Background(), post)
 	if !errors.Is(err, social.ErrNotConnected) || social.Classify(err).Cause != social.CauseAccount || !strings.Contains(err.Error(), "invalid") {
 		t.Fatalf("refused refresh: %v", err)
+	}
+	if w := h.Admin("POST", "/api/b/pixelfed/oauth/disconnect", map[string]string{"instance": "main"}); w.Code != 200 || a.OAuthState().Connected {
+		t.Fatalf("disconnect %d", w.Code)
 	}
 }

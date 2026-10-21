@@ -47,8 +47,12 @@ const (
 
 // Row is a token's metadata; the token itself is in the secret store.
 type Row struct {
-	Instance      string `gorm:"primaryKey"`
-	SeedHash      string
+	Instance string `gorm:"primaryKey"`
+	SeedHash string
+	// Account and AccountID are set for an account connected through
+	// OAuth (Connect); empty for a token from the config.
+	Account       string
+	AccountID     string
 	RefreshedAt   *time.Time
 	ExpiresAt     *time.Time
 	LastAttemptAt *time.Time
@@ -96,17 +100,17 @@ func (k *Keeper) row() (Row, bool) {
 	return r, ok
 }
 
-// Token is the token to use now: the stored, refreshed one, unless the
-// configured token changed since it was stored, or the store is
+// Token is the token to use now: the stored, refreshed or connected one,
+// unless the configured token changed since it was stored, or the store is
 // unavailable (then the configured one).
 func (k *Keeper) Token() string {
 	k.mu.Lock()
 	defer k.mu.Unlock()
-	if k.seed == "" {
-		return ""
-	}
 	r, ok := k.row()
 	hash := seedHash(k.seed)
+	if k.seed == "" && !(ok && r.SeedHash == hash) {
+		return ""
+	}
 	if ok && r.SeedHash == hash {
 		if tok, found, err := k.ctx.Secrets().Get(k.secretName()); err == nil && found {
 			return tok
@@ -135,6 +139,37 @@ func (k *Keeper) Seed(token string, refreshed, expires *time.Time) error {
 	k.mu.Lock()
 	defer k.mu.Unlock()
 	return k.store(token, Row{Instance: k.ctx.InstanceName(), SeedHash: seedHash(k.seed), RefreshedAt: refreshed, ExpiresAt: expires})
+}
+
+// Connect stores the long-lived token of an account connected through
+// OAuth. It is refreshed like a configured one, and like the stored one it
+// gives way to a new token in the config.
+func (k *Keeper) Connect(token string, expires time.Time, account, accountID string) error {
+	k.mu.Lock()
+	defer k.mu.Unlock()
+	now := k.now()
+	return k.store(token, Row{Instance: k.ctx.InstanceName(), SeedHash: seedHash(k.seed), RefreshedAt: &now, ExpiresAt: &expires,
+		Account: account, AccountID: accountID})
+}
+
+// Disconnect forgets the stored token; the configured one applies again.
+func (k *Keeper) Disconnect() error {
+	k.mu.Lock()
+	defer k.mu.Unlock()
+	if err := k.ctx.Secrets().Delete(k.secretName()); err != nil {
+		return err
+	}
+	return k.ctx.DB().Where("instance = ?", k.ctx.InstanceName()).Delete(&Row{}).Error
+}
+
+// Connected is the connected account, if the token in use is one.
+func (k *Keeper) Connected() (account, accountID string, ok bool) {
+	k.Token() // a new configured token replaces the connection first
+	r, found := k.row()
+	if !found || r.Account == "" {
+		return "", "", false
+	}
+	return r.Account, r.AccountID, true
 }
 
 // RunDue refreshes the token when its last refresh is RefreshEvery old or
@@ -186,7 +221,9 @@ func (k *Keeper) RefreshNow(ctx context.Context) error {
 type Status struct {
 	Instance      string     `json:"instance"`
 	Status        string     `json:"status"`
-	Source        string     `json:"source,omitempty"` // config | refreshed
+	Source        string     `json:"source,omitempty"` // config | refreshed | connected
+	Account       string     `json:"account,omitempty"`
+	AccountID     string     `json:"accountId,omitempty"`
 	RefreshedAt   *time.Time `json:"refreshedAt,omitempty"`
 	ExpiresAt     *time.Time `json:"expiresAt,omitempty"`
 	DaysLeft      *int       `json:"daysLeft,omitempty"`
@@ -205,6 +242,9 @@ func (k *Keeper) Status() Status {
 	s.Source = "config"
 	if r.RefreshedAt != nil {
 		s.Source = "refreshed"
+	}
+	if r.Account != "" {
+		s.Source, s.Account, s.AccountID = "connected", r.Account, r.AccountID
 	}
 	s.RefreshedAt, s.ExpiresAt, s.LastAttemptAt, s.LastError = r.RefreshedAt, r.ExpiresAt, r.LastAttemptAt, r.LastError
 	if r.ExpiresAt != nil {

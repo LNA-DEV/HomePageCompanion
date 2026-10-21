@@ -150,6 +150,47 @@ func TestNoTokenConfigured(t *testing.T) {
 	}
 }
 
+func TestConnectedAccount(t *testing.T) {
+	// Connected through OAuth without a token in the config.
+	h, u := setup(t, `""`)
+	c := &clock{time.Date(2026, 10, 1, 12, 0, 0, 0, time.UTC)}
+	u.keeper.SetClock(c.now)
+	expires := c.t.Add(60 * 24 * time.Hour)
+	if err := u.keeper.Connect("long-lived", expires, "@lna", "17841"); err != nil {
+		t.Fatal(err)
+	}
+	if u.keeper.Token() != "long-lived" {
+		t.Fatalf("token %q", u.keeper.Token())
+	}
+	s := u.keeper.Status()
+	if s.Source != "connected" || s.Account != "@lna" || s.AccountID != "17841" || s.Status != metatoken.StatusOK || !s.ExpiresAt.Equal(expires) {
+		t.Fatalf("status %+v", s)
+	}
+	// It is refreshed like any other, once a week, and stays connected.
+	c.t = c.t.Add(8 * 24 * time.Hour)
+	if err := u.keeper.RunDue(context.Background()); err != nil || u.keeper.Token() != "long-lived+" || u.asked[0] != "long-lived" {
+		t.Fatalf("refresh %v %q %v", err, u.keeper.Token(), u.asked)
+	}
+	if s := u.keeper.Status(); s.Source != "connected" || s.Account != "@lna" {
+		t.Fatalf("after refresh %+v", s)
+	}
+	// A token put into the config later replaces the connection, as any
+	// new configured token replaces the stored one.
+	if err := h.Rewrite("modules:\n  metatoken-test: { instances: { main: { token: fresh } } }\n"); err != nil {
+		t.Fatal(err)
+	}
+	u2 := companiontest.Instance[*tokenUser](h, "metatoken-test:main")
+	if u2.keeper.Token() != "fresh" || u2.keeper.Status().Source != "config" {
+		t.Fatalf("new config token: %q %+v", u2.keeper.Token(), u2.keeper.Status())
+	}
+
+	// Disconnecting falls back to the configured token.
+	u2.keeper.Connect("again", expires, "@lna", "17841")
+	if err := u2.keeper.Disconnect(); err != nil || u2.keeper.Token() != "fresh" || u2.keeper.Status().Source != "config" {
+		t.Fatalf("disconnect %v %q", err, u2.keeper.Token())
+	}
+}
+
 func TestLooksExpired(t *testing.T) {
 	for msg, want := range map[string]bool{
 		`{"error":{"code":190}}`:            true,

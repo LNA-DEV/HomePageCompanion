@@ -49,12 +49,14 @@ type Account struct {
 	selfTime time.Time
 }
 
-// oauthScopes: Pixelfed's server knows read and write.
+// oauthScopes: Pixelfed has no granular scopes; its endpoints check read
+// and write. Its tokens expire after a year and come with a refresh token.
 var oauthScopes = []string{"read", "write"}
 
 func (a *Account) Provision(ctx companion.Context) error {
 	a.ctx = ctx
 	a.oauth = fediauth.New(ctx, oauthScopes)
+	a.oauth.Revoke = false // Pixelfed has no /oauth/revoke
 	return nil
 }
 
