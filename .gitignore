@@ -27,8 +27,10 @@ src/data/config.yaml
 
 __debug*
 
-# Built binary
-home-page-companion
+# Built binaries (the old one, and hpc build's default output)
+/home-page-companion
+/src/home-page-companion
+/companion
 
 # Node.js / SvelteKit
 web/node_modules/
