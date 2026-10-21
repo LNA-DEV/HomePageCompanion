@@ -115,7 +115,7 @@ func (m *metrics) sample(now time.Time) {
 func (m *metrics) historyCopy() []point {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	return append([]point(nil), m.history...)
+	return append([]point{}, m.history...)
 }
 
 // write renders every metric in the Prometheus text format.

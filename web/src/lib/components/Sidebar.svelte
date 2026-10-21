@@ -25,9 +25,21 @@
 
 	let { groups, version = '', onLogout, open = false, onClose }: Props = $props();
 
-	function isActive(href: string): boolean {
-		const p = $page.url.pathname;
+	function matches(href: string, p: string): boolean {
 		return href === '/' ? p === '/' : p === href || p.startsWith(href + '/');
+	}
+
+	// Only the longest matching entry is active: a module's first page
+	// (/b/autoupload) must not light up on its others (/b/autoupload/schedule).
+	const activeHref = $derived.by(() => {
+		const p = $page.url.pathname;
+		let best = '';
+		for (const g of groups) for (const i of g.items) if (matches(i.href, p) && i.href.length > best.length) best = i.href;
+		return best;
+	});
+
+	function isActive(href: string): boolean {
+		return href === activeHref;
 	}
 </script>
 

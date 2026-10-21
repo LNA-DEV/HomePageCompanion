@@ -45,7 +45,9 @@
 
 	async function load() {
 		try {
-			[overview, history] = await Promise.all([core.get<Overview>('overview'), core.get<MetricsPoint[]>('metrics/history')]);
+			const [o, h] = await Promise.all([core.get<Overview>('overview'), core.get<MetricsPoint[] | null>('metrics/history')]);
+			overview = o;
+			history = h ?? [];
 		} catch (e) {
 			toast(e instanceof Error ? e.message : String(e), 'error');
 		}

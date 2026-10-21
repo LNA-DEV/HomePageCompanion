@@ -461,6 +461,11 @@ func TestTrustedProxies(t *testing.T) {
 
 func TestMetrics(t *testing.T) {
 	h := companiontest.New(t, baseConfig)
+	// A fresh companion has no history yet: an empty list, not null, which
+	// the dashboard could not iterate.
+	if w := h.Admin("GET", "/api/core/metrics/history", nil); strings.TrimSpace(w.Body.String()) != "[]" {
+		t.Fatalf("fresh history %d %s", w.Code, w.Body.String())
+	}
 	h.Public("GET", "/api/legacy/thing", nil)
 	h.MustRunJob("t.consumer:a/count")
 	w := h.Admin("GET", "/metrics", nil)
