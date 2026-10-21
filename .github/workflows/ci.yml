@@ -1,8 +1,9 @@
 name: CI
 
-# Every push and pull request runs the tests; red blocks the merge. Images are
-# built and pushed only from main (and version tags), and only after the tests
-# passed (docs/concepts/modular-architecture.md §6).
+# Every push and pull request runs the tests: unit, contract, module and
+# migration tests, the integration tests and the UI tests; red blocks the
+# merge. Images are built and pushed only from main (and version tags), and
+# only after the tests passed (docs/concepts/modular-architecture.md §6).
 on:
   push:
     branches: ['**']
@@ -72,11 +73,68 @@ jobs:
       - name: build the module UIs
         run: npm run build:modules
 
+  # Every standard module as one program, against a local test feed and fake
+  # platforms that fail on purpose: feed gone, 429, 503, expired token, a
+  # restart and a kill in the middle of a job (e2e/world).
+  integration:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: e2e
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: '**/go.sum'
+      - name: go vet
+        run: go vet -tags integration ./...
+      - name: go test
+        run: go test -tags integration -count=1 ./...
+
+  # The shell and the module UIs in Chromium against the same setup
+  # (cmd/uiserver -world): login, posts with filters, search and paging, the
+  # detail panel, "run now", problems, a phone. The screenshots are kept.
+  ui:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: '**/go.sum'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm ci
+      - name: build the shell and the module UIs
+        run: npm run build && npm run build:modules
+      - name: install Chromium
+        run: npx playwright install --with-deps chromium
+      - name: Playwright
+        run: npm run test:ui
+      - name: keep the screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ui-screenshots
+          path: |
+            web/ui-screenshots/
+            web/playwright-report/
+            web/test-results/
+          retention-days: 14
+          if-no-files-found: ignore
+
   # One image: the shell, the core and every module of build.yaml. Built on
   # every push so a broken image is red too; pushed to GHCR from main and
   # version tags only.
   image:
-    needs: [go, go-legacy, web]
+    needs: [go, go-legacy, web, integration, ui]
     runs-on: ubuntu-latest
     permissions:
       contents: read

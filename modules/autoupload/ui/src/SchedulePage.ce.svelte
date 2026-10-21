@@ -156,8 +156,7 @@
 						{#if run === 'starting' || run.result === 'running'}
 							Running…
 						{:else}
-							<span class="font-medium {resultColor[run.result] ?? ''}">{resultLabel[run.result] ?? run.result}</span>
-							{#if run.title}: {run.title}{/if}
+							<span class="font-medium {resultColor[run.result] ?? ''}">{resultLabel[run.result] ?? run.result}</span>{#if run.title}: {run.title}{/if}
 							{#if run.postUrl} – <a class="underline" href={run.postUrl} target="_blank" rel="noopener">{run.postUrl}</a>{/if}
 							{#if run.error}<p class="text-red-700 dark:text-red-300">{run.error}</p>{/if}
 						{/if}

@@ -55,3 +55,8 @@ src/data/trips/**
 # Module UIs, staged and built by web/scripts/build-modules.mjs
 web/.modules/
 web/build-modules/
+
+# Playwright
+web/test-results/
+web/playwright-report/
+web/ui-screenshots/

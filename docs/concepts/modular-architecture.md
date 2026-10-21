@@ -426,6 +426,8 @@ CI gates:
 3. Images are built and pushed only from `main` and only after green tests.
 4. Instead of a coverage percentage: every package with logic has tests. A package without a test file passes only if it is on a short exception list, e.g. `models`.
 
+As built: the integration setup is `e2e/world`, every standard module as one program, a generated test feed (60 photos with real JPEGs, 8 blog posts) and fake Mastodon, Pixelfed, Bluesky, Instagram, Threads and push servers that fail on request (status, expired token, a call that hangs). Its seed uses real runs: posts on every network, one open problem per cause, likes, microblog posts, webmentions, subscribers. `go test -tags integration ./...` in `e2e/` runs the scenarios, among them a restart and a `kill -9` in the middle of a post, against a separately built companion (`e2e/cmd/companion`). `e2e/cmd/uiserver -world` serves the same setup to Playwright (`web/tests/ui`, `npm run test:ui`). Both run on every push and pull request; the image waits for them.
+
 ## 7. Build order
 
 **Stage 0: module boundaries in the monolith (no new deployment)**
