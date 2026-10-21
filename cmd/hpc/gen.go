@@ -155,6 +155,9 @@ type genParam struct {
 
 type genErr struct{ Var, Code string }
 
+// reserved are names the generated methods use themselves.
+var reserved = map[string]bool{"ctx": true, "x": true, "a": true, "in": true, "v": true, "o": true, "out": true, "res": true, "err": true, "t0": true, "wire": true, "time": true, "context": true}
+
 // listedPkg is what go list reports.
 type listedPkg struct {
 	ImportPath string
@@ -413,6 +416,9 @@ func (p *genPkg) opsOf(tn *types.TypeName) ([]*genOp, error) {
 			v := ps.At(j)
 			if v.Name() == "" || v.Name() == "_" {
 				return nil, fmt.Errorf("%s: parameters need names, they are the JSON keys", where)
+			}
+			if reserved[v.Name()] {
+				return nil, fmt.Errorf("%s: the generated code uses the name %q, call the parameter differently", where, v.Name())
 			}
 			if isBytes(v.Type()) {
 				if op.Raw >= 0 {

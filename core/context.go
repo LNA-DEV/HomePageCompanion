@@ -111,7 +111,11 @@ func (m *modCtx) Capability(instanceID string, cap companion.Capability) (any, e
 	if !ok || !target.running {
 		return nil, fmt.Errorf("%s is not running", instanceID)
 	}
-	return target.provide(cap)
+	impl, err := target.provide(cap)
+	if err != nil {
+		return nil, err
+	}
+	return m.c.measured(cap, instanceID, impl), nil
 }
 
 func (m *modCtx) Metrics() companion.Metrics { return m.c.metrics.scope(m.info.ID) }

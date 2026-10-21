@@ -4,6 +4,7 @@ package notify
 
 import (
 	"context"
+	"time"
 
 	"github.com/LNA-DEV/HomePageCompanion/companion/wire"
 )
@@ -16,6 +17,7 @@ func init() {
 		Required:   []string{"send", "broadcast"},
 		Client:     newNotifyV1Client,
 		Server:     newNotifyV1Server,
+		Measure:    newNotifyV1Measured,
 	})
 }
 
@@ -63,4 +65,36 @@ func newNotifyV1Server(impl any) *wire.Server {
 		},
 	}}
 	return s
+}
+
+// notifyV1Measured observes every call of an implementation of notify/v1.
+type notifyV1Measured struct {
+	v Notifier
+	o wire.Observe
+}
+
+// MeasuredImpl is the measured implementation (wire.Unmeasure).
+func (x *notifyV1Measured) MeasuredImpl() any { return x.v }
+
+func (x *notifyV1Measured) Send(ctx context.Context, to string, message Message) error {
+	t0 := time.Now()
+	err := x.v.Send(ctx, to, message)
+	x.o("send", t0, err)
+	return err
+}
+
+func (x *notifyV1Measured) Broadcast(ctx context.Context, message Message) error {
+	t0 := time.Now()
+	err := x.v.Broadcast(ctx, message)
+	x.o("broadcast", t0, err)
+	return err
+}
+
+func newNotifyV1Measured(impl any, o wire.Observe) any {
+	v, ok := impl.(Notifier)
+	if !ok {
+		return impl
+	}
+	base := &notifyV1Measured{v, o}
+	return base
 }

@@ -25,6 +25,7 @@ import (
 	"github.com/LNA-DEV/HomePageCompanion/capability/storage"
 	"github.com/LNA-DEV/HomePageCompanion/companion"
 	"github.com/LNA-DEV/HomePageCompanion/core/internal/conf"
+	"github.com/LNA-DEV/HomePageCompanion/internal/blocks"
 	"gorm.io/gorm"
 )
 
@@ -33,8 +34,11 @@ type Options struct {
 	ConfigPath string // companion.yaml
 	DataDir    string // data/
 	Shell      fs.FS  // the built admin shell; nil serves a placeholder
-	// Listen overrides core.listen.
-	Listen string
+	// Listen overrides core.listen, ServicesListen core.servicesListen.
+	Listen         string
+	ServicesListen string
+	// LockPath is companion.lock (default: next to companion.yaml).
+	LockPath string
 	// Logs is where the core's own log lines go (default: the standard
 	// logger's output).
 	Logs io.Writer
@@ -158,6 +162,9 @@ func (c *Core) Start(ctx context.Context) error {
 	if err := c.rebuildGateway(); err != nil {
 		return err
 	}
+	if err := c.services.listen(); err != nil {
+		return err
+	}
 	c.log.Printf("started %d instance(s) of %d building block(s)", len(next), len(c.blocks))
 	return nil
 }
@@ -206,12 +213,17 @@ func (c *Core) provision(ctx context.Context) (map[string]*instance, error) {
 	if err != nil {
 		return nil, err
 	}
-	ps, err := c.plan(f)
+	lock, lockRaw, err := c.services.readLock()
+	if err != nil {
+		return nil, err
+	}
+	ps, err := c.plan(f, lock)
 	if err != nil {
 		return nil, err
 	}
 	c.conf.Store(f)
 	c.confRaw = raw
+	c.services.lockRaw = lockRaw
 
 	next := map[string]*instance{}
 	for _, p := range ps {
@@ -247,7 +259,14 @@ func (c *Core) create(p *planned, next map[string]*instance) (*instance, error) 
 	mc := c.moduleCtx(p.info)
 	in.ctx = &instCtx{modCtx: mc, name: p.name}
 	if p.service != nil {
-		svc, err := c.services.instance(p, in.ctx)
+		svc, err := c.services.instance(p, func(id string) *instance {
+			if t := next[id]; t != nil {
+				return t
+			}
+			c.mu.RLock()
+			defer c.mu.RUnlock()
+			return c.instances[id]
+		})
 		if err != nil {
 			return nil, fmt.Errorf("%s: %w", p.id, err)
 		}
@@ -258,10 +277,10 @@ func (c *Core) create(p *planned, next map[string]*instance) (*instance, error) 
 		return nil, fmt.Errorf("%s: module has no New", p.id)
 	}
 	in.value = p.info.New()
-	if err := decodeConfig(in.value, p.values); err != nil {
+	if err := blocks.DecodeConfig(in.value, p.values); err != nil {
 		return nil, fmt.Errorf("%s: %w", p.id, err)
 	}
-	err := injectSlots(in.value, p.slots, func(id string) (any, error) {
+	err := blocks.InjectSlots(in.value, p.slots, func(id string) (any, error) {
 		target := next[id]
 		if target == nil {
 			c.mu.RLock()
@@ -274,7 +293,11 @@ func (c *Core) create(p *planned, next map[string]*instance) (*instance, error) 
 		for _, s := range p.info.Slots {
 			for _, sid := range p.slots[s.Name] {
 				if sid == id {
-					return target.provide(s.Needs)
+					impl, err := target.provide(s.Needs)
+					if err != nil {
+						return nil, err
+					}
+					return c.measured(s.Needs, id, impl), nil
 				}
 			}
 		}
@@ -321,7 +344,7 @@ func (c *Core) moduleCtx(info companion.Info) *modCtx {
 // exist, before anything else is provisioned.
 func (c *Core) afterStorage(in *instance) error {
 	f := c.cfg()
-	if c.sql == nil && provides(in.info, nil, storage.SQLV1) {
+	if c.sql == nil && provides(in.info, storage.SQLV1) {
 		if want := f.Core.Database; want == "" || refID(want) == in.id {
 			sql, err := in.provide(storage.SQLV1)
 			if err != nil {
@@ -338,7 +361,7 @@ func (c *Core) afterStorage(in *instance) error {
 			}
 		}
 	}
-	if c.blob == nil && provides(in.info, nil, storage.BlobV1) {
+	if c.blob == nil && provides(in.info, storage.BlobV1) {
 		if want := f.Core.Blobs; want == "" || refID(want) == in.id {
 			b, err := in.provide(storage.BlobV1)
 			if err != nil {
@@ -479,10 +502,14 @@ func (c *Core) Reload(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	if string(raw) == string(c.confRaw) {
+	lock, lockRaw, err := c.services.readLock()
+	if err != nil {
+		return err
+	}
+	if string(raw) == string(c.confRaw) && string(lockRaw) == string(c.services.lockRaw) {
 		return nil
 	}
-	ps, err := c.plan(f)
+	ps, err := c.plan(f, lock)
 	if err != nil {
 		return err
 	}
@@ -548,6 +575,7 @@ func (c *Core) Reload(ctx context.Context) error {
 	}
 	c.conf.Store(f)
 	c.confRaw = raw
+	c.services.lockRaw = lockRaw
 	c.mu.Lock()
 	c.instances = next
 	c.order = idsOf(ps)
@@ -563,8 +591,12 @@ func (c *Core) Reload(ctx context.Context) error {
 		}
 	}
 	for _, p := range ps {
-		if _, ok := c.blocks[p.block]; !ok {
+		if b, ok := c.blocks[p.block]; !ok {
 			c.blocks[p.block] = &block{info: p.info, mc: next[p.id].ctx.modCtx}
+			blocksChanged = true
+		} else if p.service != nil && !reflect.DeepEqual(b.info, p.info) {
+			// A service's manifest changed with hpc apply.
+			b.info = p.info
 			blocksChanged = true
 		}
 	}
@@ -581,6 +613,9 @@ func (c *Core) Reload(ctx context.Context) error {
 		if err := c.rebuildGateway(); err != nil {
 			return err
 		}
+	}
+	if err := c.services.listen(); err != nil {
+		return err
 	}
 	c.log.Printf("reloaded: %d instance(s) replaced", len(created))
 	return nil

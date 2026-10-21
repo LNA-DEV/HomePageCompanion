@@ -32,6 +32,10 @@ type Core struct {
 	// PublicURL is how browsers reach the companion.
 	PublicURL string `yaml:"publicUrl"`
 	Listen    string `yaml:"listen"` // ":8080" when empty
+	// ServicesListen is where services reach the core: its API for them
+	// (/core/v1/) and the egress proxy. ":3128" when empty; only opened
+	// when a service is configured, and never published to the host.
+	ServicesListen string `yaml:"servicesListen"`
 	// Database and Blobs name the storage instances; when empty, the only
 	// configured or compiled-in one is used.
 	Database string  `yaml:"database"`
@@ -56,7 +60,15 @@ type ModuleBlock struct {
 
 // ServiceBlock is one service.
 type ServiceBlock struct {
-	From      string                    `yaml:"from"`
+	// From is the source: oci://<image>, git+https://<repo>@<ref> or
+	// path:<dir> (docs/concepts/modular-architecture.md §5.6).
+	From string `yaml:"from"`
+	// Dockerfile is the Dockerfile within a git or path source, when it is
+	// not <source>/Dockerfile.
+	Dockerfile string `yaml:"dockerfile"`
+	// URL is where the core reaches the service, when it does not run
+	// next to the companion under its block name (development).
+	URL       string                    `yaml:"url"`
 	Grants    Grants                    `yaml:"grants"`
 	Config    map[string]any            `yaml:"config"`
 	Instances map[string]map[string]any `yaml:"instances"`

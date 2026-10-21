@@ -4,6 +4,7 @@ package social
 
 import (
 	"context"
+	"time"
 
 	"github.com/LNA-DEV/HomePageCompanion/companion/wire"
 )
@@ -24,12 +25,14 @@ func init() {
 		Optional:   []string{"listPosts", "delete"},
 		Client:     newPublisherV1Client,
 		Server:     newPublisherV1Server,
+		Measure:    newPublisherV1Measured,
 	})
 	wire.Register(wire.Adapter{
 		Capability: InteractionsV1,
 		Required:   []string{"getStats", "listReplies"},
 		Client:     newInteractionsV1Client,
 		Server:     newInteractionsV1Server,
+		Measure:    newInteractionsV1Measured,
 	})
 }
 
@@ -160,6 +163,103 @@ func newPublisherV1Server(impl any) *wire.Server {
 	return s
 }
 
+// publisherV1Measured observes every call of an implementation of social.publisher/v1.
+type publisherV1Measured struct {
+	v Publisher
+	o wire.Observe
+}
+
+// MeasuredImpl is the measured implementation (wire.Unmeasure).
+func (x *publisherV1Measured) MeasuredImpl() any { return x.v }
+
+func (x *publisherV1Measured) Describe(ctx context.Context) (Limits, error) {
+	t0 := time.Now()
+	res, err := x.v.Describe(ctx)
+	x.o("describe", t0, err)
+	return res, err
+}
+
+func (x *publisherV1Measured) Preview(ctx context.Context, p Post) (Rendered, error) {
+	t0 := time.Now()
+	res, err := x.v.Preview(ctx, p)
+	x.o("preview", t0, err)
+	return res, err
+}
+
+func (x *publisherV1Measured) Publish(ctx context.Context, p Post) (Result, error) {
+	t0 := time.Now()
+	res, err := x.v.Publish(ctx, p)
+	x.o("publish", t0, err)
+	return res, err
+}
+
+func (x *publisherV1Measured) ResolveMention(ctx context.Context, profileURL string) (Mention, error) {
+	t0 := time.Now()
+	res, err := x.v.ResolveMention(ctx, profileURL)
+	x.o("resolveMention", t0, err)
+	return res, err
+}
+
+type publisherV1MeasuredOpLister struct {
+	v Lister
+	o wire.Observe
+}
+
+func (x publisherV1MeasuredOpLister) ListPosts(ctx context.Context) ([]ListedPost, error) {
+	t0 := time.Now()
+	res, err := x.v.ListPosts(ctx)
+	x.o("listPosts", t0, err)
+	return res, err
+}
+
+type publisherV1MeasuredOpDeleter struct {
+	v Deleter
+	o wire.Observe
+}
+
+func (x publisherV1MeasuredOpDeleter) Delete(ctx context.Context, ref Result) error {
+	t0 := time.Now()
+	err := x.v.Delete(ctx, ref)
+	x.o("delete", t0, err)
+	return err
+}
+
+type publisherV1MeasuredLister struct {
+	*publisherV1Measured
+	publisherV1MeasuredOpLister
+}
+
+type publisherV1MeasuredDeleter struct {
+	*publisherV1Measured
+	publisherV1MeasuredOpDeleter
+}
+
+type publisherV1MeasuredListerDeleter struct {
+	*publisherV1Measured
+	publisherV1MeasuredOpLister
+	publisherV1MeasuredOpDeleter
+}
+
+func newPublisherV1Measured(impl any, o wire.Observe) any {
+	v, ok := impl.(Publisher)
+	if !ok {
+		return impl
+	}
+	base := &publisherV1Measured{v, o}
+	o0, has0 := impl.(Lister)
+	o1, has1 := impl.(Deleter)
+	if has0 && has1 {
+		return &publisherV1MeasuredListerDeleter{base, publisherV1MeasuredOpLister{o0, o}, publisherV1MeasuredOpDeleter{o1, o}}
+	}
+	if !has0 && has1 {
+		return &publisherV1MeasuredDeleter{base, publisherV1MeasuredOpDeleter{o1, o}}
+	}
+	if has0 && !has1 {
+		return &publisherV1MeasuredLister{base, publisherV1MeasuredOpLister{o0, o}}
+	}
+	return base
+}
+
 // interactionsV1Client calls social.interactions/v1 on a provider over the wire.
 type interactionsV1Client struct{ c wire.Caller }
 
@@ -202,4 +302,36 @@ func newInteractionsV1Server(impl any) *wire.Server {
 		},
 	}}
 	return s
+}
+
+// interactionsV1Measured observes every call of an implementation of social.interactions/v1.
+type interactionsV1Measured struct {
+	v Interactions
+	o wire.Observe
+}
+
+// MeasuredImpl is the measured implementation (wire.Unmeasure).
+func (x *interactionsV1Measured) MeasuredImpl() any { return x.v }
+
+func (x *interactionsV1Measured) GetStats(ctx context.Context, ref Result) (Stats, error) {
+	t0 := time.Now()
+	res, err := x.v.GetStats(ctx, ref)
+	x.o("getStats", t0, err)
+	return res, err
+}
+
+func (x *interactionsV1Measured) ListReplies(ctx context.Context, ref Result) ([]Reply, error) {
+	t0 := time.Now()
+	res, err := x.v.ListReplies(ctx, ref)
+	x.o("listReplies", t0, err)
+	return res, err
+}
+
+func newInteractionsV1Measured(impl any, o wire.Observe) any {
+	v, ok := impl.(Interactions)
+	if !ok {
+		return impl
+	}
+	base := &interactionsV1Measured{v, o}
+	return base
 }

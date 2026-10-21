@@ -24,6 +24,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/LNA-DEV/HomePageCompanion/companion"
 )
@@ -333,6 +334,21 @@ type Adapter struct {
 	// Server returns the server for impl, nil if impl does not implement
 	// the capability.
 	Server func(impl any) *Server
+	// Measure wraps impl so that every call is observed, keeping the
+	// optional interfaces impl implements. impl comes back unchanged if it
+	// does not implement the capability.
+	Measure func(impl any, o Observe) any
+}
+
+// Observe is told about every call of a measured implementation.
+type Observe func(op string, start time.Time, err error)
+
+// Unmeasure returns the implementation inside a measured wrapper, or v.
+func Unmeasure(v any) any {
+	if m, ok := v.(interface{ MeasuredImpl() any }); ok {
+		return m.MeasuredImpl()
+	}
+	return v
 }
 
 var (

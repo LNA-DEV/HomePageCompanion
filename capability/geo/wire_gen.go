@@ -4,6 +4,7 @@ package geo
 
 import (
 	"context"
+	"time"
 
 	"github.com/LNA-DEV/HomePageCompanion/companion/wire"
 )
@@ -18,6 +19,7 @@ func init() {
 		Required:   []string{"route"},
 		Client:     newRoutingV1Client,
 		Server:     newRoutingV1Server,
+		Measure:    newRoutingV1Measured,
 	})
 }
 
@@ -56,4 +58,29 @@ func newRoutingV1Server(impl any) *wire.Server {
 		},
 	}}
 	return s
+}
+
+// routingV1Measured observes every call of an implementation of geo.routing/v1.
+type routingV1Measured struct {
+	v Router
+	o wire.Observe
+}
+
+// MeasuredImpl is the measured implementation (wire.Unmeasure).
+func (x *routingV1Measured) MeasuredImpl() any { return x.v }
+
+func (x *routingV1Measured) Route(ctx context.Context, mode string, points []Point) (Route, error) {
+	t0 := time.Now()
+	res, err := x.v.Route(ctx, mode, points)
+	x.o("route", t0, err)
+	return res, err
+}
+
+func newRoutingV1Measured(impl any, o wire.Observe) any {
+	v, ok := impl.(Router)
+	if !ok {
+		return impl
+	}
+	base := &routingV1Measured{v, o}
+	return base
 }

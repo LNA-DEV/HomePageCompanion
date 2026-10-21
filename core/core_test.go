@@ -15,6 +15,7 @@ import (
 
 	"github.com/LNA-DEV/HomePageCompanion/capability/social"
 	"github.com/LNA-DEV/HomePageCompanion/companion"
+	"github.com/LNA-DEV/HomePageCompanion/companion/wire"
 	"github.com/LNA-DEV/HomePageCompanion/companiontest"
 	"github.com/LNA-DEV/HomePageCompanion/core"
 	"github.com/gin-gonic/gin"
@@ -131,13 +132,13 @@ func TestStartsAndConnects(t *testing.T) {
 	c := companiontest.Instance[*consumer](h, "t.consumer:a")
 	main := companiontest.Instance[*companiontest.FakePublisher](h, "fake.publisher:main")
 	second := companiontest.Instance[*companiontest.FakePublisher](h, "fake.publisher:second")
-	if c.Target != social.Publisher(main) || c.TargetID != "fake.publisher:main" {
+	if wire.Unmeasure(c.Target) != any(main) || c.TargetID != "fake.publisher:main" {
 		t.Fatalf("target slot: %v %q", c.Target, c.TargetID)
 	}
-	if len(c.All) != 2 || c.All[1] != social.Publisher(second) {
+	if len(c.All) != 2 || wire.Unmeasure(c.All[1]) != any(second) {
 		t.Fatalf("multiple slot: %v", c.All)
 	}
-	if c.ByID["fake.publisher:second"] != social.Publisher(second) {
+	if wire.Unmeasure(c.ByID["fake.publisher:second"]) != any(second) {
 		t.Fatalf("map slot: %v", c.ByID)
 	}
 	if c.ctx.InstanceID() != "t.consumer:a" || c.ctx.ModuleID() != "t.consumer" {
@@ -468,7 +469,7 @@ func TestReloadSwapsOnlyWhatChanged(t *testing.T) {
 	if newMain == oldMain || newMain.MaxLength != 300 {
 		t.Fatal("publisher not replaced")
 	}
-	if newConsumer == oldConsumer || newConsumer.Target != social.Publisher(newMain) || !oldConsumer.stopped {
+	if newConsumer == oldConsumer || wire.Unmeasure(newConsumer.Target) != any(newMain) || !oldConsumer.stopped {
 		t.Fatal("dependent consumer not replaced")
 	}
 	if companiontest.Instance[*companiontest.FakeSource](h, "fake.source:s") != oldSource {

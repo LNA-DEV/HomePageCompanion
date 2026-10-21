@@ -36,7 +36,11 @@ func (c *Core) OpenStorage(ctx context.Context) error {
 }
 
 func (c *Core) openStorageFrom(f *conf.File, raw []byte) error {
-	ps, err := c.plan(f)
+	lock, _, err := c.services.readLock()
+	if err != nil {
+		return err
+	}
+	ps, err := c.plan(f, lock)
 	if err != nil {
 		return err
 	}
@@ -44,7 +48,7 @@ func (c *Core) openStorageFrom(f *conf.File, raw []byte) error {
 	c.confRaw = raw
 	next := map[string]*instance{}
 	for _, p := range ps {
-		if !provides(p.info, nil, storage.SQLV1) && !provides(p.info, nil, storage.BlobV1) {
+		if !provides(p.info, storage.SQLV1) && !provides(p.info, storage.BlobV1) {
 			continue
 		}
 		in, err := c.create(p, next)

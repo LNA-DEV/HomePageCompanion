@@ -18,6 +18,7 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -46,20 +47,56 @@ type Harness struct {
 // core.blobs default to the in-memory test storage). It stops with the test.
 func New(t *testing.T, config string) *Harness {
 	t.Helper()
+	return NewWith(t, config, Options{})
+}
+
+// Options are what NewWith adds.
+type Options struct {
+	// Files are written next to companion.yaml before the start, by name
+	// (companion.lock).
+	Files map[string][]byte
+	// ServicesListen is where services reach the core (default: a free
+	// port on 127.0.0.1).
+	ServicesListen string
+}
+
+// NewWith starts a core like New, with extra files and options.
+func NewWith(t *testing.T, config string, o Options) *Harness {
+	t.Helper()
 	registerStorage()
 	dir := t.TempDir()
 	cfgPath := filepath.Join(dir, "companion.yaml")
 	if err := os.WriteFile(cfgPath, []byte(withTestStorage(t, config)), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	for name, b := range o.Files {
+		if err := os.WriteFile(filepath.Join(dir, name), b, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if o.ServicesListen == "" {
+		o.ServicesListen = "127.0.0.1:0"
+	}
 	t.Setenv("COMPANION_SECRET_KEY", "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=")
 	t.Setenv("TRUSTED_PROXIES", "")
-	c := core.New(core.Options{ConfigPath: cfgPath, DataDir: filepath.Join(dir, "data"), Logs: testWriter{t}})
+	c := core.New(core.Options{ConfigPath: cfgPath, DataDir: filepath.Join(dir, "data"), Logs: testWriter{t}, ServicesListen: o.ServicesListen})
 	if err := c.Start(context.Background()); err != nil {
 		t.Fatalf("core: %v", err)
 	}
 	t.Cleanup(func() { c.Stop(context.Background()) })
 	return &Harness{T: t, Core: c, Dir: filepath.Join(dir, "data"), Config: cfgPath, handler: c.Handler()}
+}
+
+// FreeAddr is a free local address, for a core's services listener that a
+// service must know before the core starts.
+func FreeAddr(t *testing.T) string {
+	t.Helper()
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+	return ln.Addr().String()
 }
 
 // withTestStorage adds the test storage unless the config names its own.

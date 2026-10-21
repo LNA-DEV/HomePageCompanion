@@ -4,6 +4,7 @@ package feed
 
 import (
 	"context"
+	"time"
 
 	"github.com/LNA-DEV/HomePageCompanion/companion/wire"
 )
@@ -18,6 +19,7 @@ func init() {
 		Required:   []string{"listItems", "getItem"},
 		Client:     newSourceV1Client,
 		Server:     newSourceV1Server,
+		Measure:    newSourceV1Measured,
 	})
 }
 
@@ -63,4 +65,36 @@ func newSourceV1Server(impl any) *wire.Server {
 		},
 	}}
 	return s
+}
+
+// sourceV1Measured observes every call of an implementation of feed.source/v1.
+type sourceV1Measured struct {
+	v Source
+	o wire.Observe
+}
+
+// MeasuredImpl is the measured implementation (wire.Unmeasure).
+func (x *sourceV1Measured) MeasuredImpl() any { return x.v }
+
+func (x *sourceV1Measured) ListItems(ctx context.Context) ([]Item, error) {
+	t0 := time.Now()
+	res, err := x.v.ListItems(ctx)
+	x.o("listItems", t0, err)
+	return res, err
+}
+
+func (x *sourceV1Measured) GetItem(ctx context.Context, id string) (Item, error) {
+	t0 := time.Now()
+	res, err := x.v.GetItem(ctx, id)
+	x.o("getItem", t0, err)
+	return res, err
+}
+
+func newSourceV1Measured(impl any, o wire.Observe) any {
+	v, ok := impl.(Source)
+	if !ok {
+		return impl
+	}
+	base := &sourceV1Measured{v, o}
+	return base
 }

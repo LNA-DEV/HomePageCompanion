@@ -13,7 +13,7 @@ import (
 // a provider over companion/wire, a server that answers for an
 // implementation, and their registration.
 func genGo(p *genPkg) ([]byte, error) {
-	imports := map[string]string{"context": "context", corePath + "/companion/wire": "wire"}
+	imports := map[string]string{"context": "context", "time": "time", corePath + "/companion/wire": "wire"}
 	q := func(pkg *types.Package) string {
 		if pkg.Path() == p.Path {
 			return ""
@@ -46,7 +46,7 @@ func genGo(p *genPkg) ([]byte, error) {
 		if len(opt) > 0 {
 			w("\t\tOptional: []string{%s},\n", strings.Join(opt, ", "))
 		}
-		w("\t\tClient: new%sClient,\n\t\tServer: new%sServer,\n\t})\n", upperFirst(base), upperFirst(base))
+		w("\t\tClient: new%sClient,\n\t\tServer: new%sServer,\n\t\tMeasure: new%sMeasured,\n\t})\n", upperFirst(base), upperFirst(base), upperFirst(base))
 	}
 	w("}\n")
 
@@ -117,6 +117,54 @@ func genGo(p *genPkg) ([]byte, error) {
 			w("\t}\n")
 		}
 		w("\treturn s\n}\n")
+
+		// The measured wrapper: the same combinations, each call observed.
+		m := base + "Measured"
+		w("\n// %s observes every call of an implementation of %s.\ntype %s struct {\n\tv %s\n\to wire.Observe\n}\n", m, c.Wire(), m, c.Iface.Name())
+		w("\n// MeasuredImpl is the measured implementation (wire.Unmeasure).\nfunc (x *%s) MeasuredImpl() any { return x.v }\n", m)
+		for _, o := range c.Required {
+			measuredMethod(w, "*"+m, o, ts)
+		}
+		for _, oi := range c.Optional {
+			t := m + "Op" + oi.Iface.Name()
+			w("\ntype %s struct {\n\tv %s\n\to wire.Observe\n}\n", t, oi.Iface.Name())
+			for _, o := range oi.Ops {
+				measuredMethod(w, t, o, ts)
+			}
+		}
+		for mask := 1; mask < 1<<n; mask++ {
+			name, fields := m, []string{"*" + m}
+			for i, oi := range c.Optional {
+				if mask&(1<<i) != 0 {
+					name += oi.Iface.Name()
+					fields = append(fields, m+"Op"+oi.Iface.Name())
+				}
+			}
+			w("\ntype %s struct {\n", name)
+			for _, f := range fields {
+				w("\t%s\n", f)
+			}
+			w("}\n")
+		}
+		w("\nfunc new%sMeasured(impl any, o wire.Observe) any {\n\tv, ok := impl.(%s)\n\tif !ok {\n\t\treturn impl\n\t}\n\tbase := &%s{v, o}\n", upperFirst(base), c.Iface.Name(), m)
+		for i, oi := range c.Optional {
+			w("\to%d, has%d := impl.(%s)\n", i, i, oi.Iface.Name())
+		}
+		for mask := 1<<n - 1; mask >= 1; mask-- {
+			var conds []string
+			name, vals := m, []string{"base"}
+			for i, oi := range c.Optional {
+				if mask&(1<<i) != 0 {
+					conds = append(conds, fmt.Sprintf("has%d", i))
+					name += oi.Iface.Name()
+					vals = append(vals, fmt.Sprintf("%sOp%s{o%d, o}", m, oi.Iface.Name(), i))
+				} else {
+					conds = append(conds, fmt.Sprintf("!has%d", i))
+				}
+			}
+			w("\tif %s {\n\t\treturn &%s{%s}\n\t}\n", strings.Join(conds, " && "), name, strings.Join(vals, ", "))
+		}
+		w("\treturn base\n}\n")
 	}
 
 	var head bytes.Buffer
@@ -229,4 +277,23 @@ func serverFunc(w func(string, ...any), v string, o *genOp, ts func(types.Type) 
 	default:
 		w("\t\t\treturn %s.%s(%s)\n\t\t}", v, o.Method, args)
 	}
+}
+
+func measuredMethod(w func(string, ...any), recv string, o *genOp, ts func(types.Type) string) {
+	var params, names []string
+	for _, a := range o.Params {
+		params = append(params, fmt.Sprintf("%s %s", a.Name, ts(a.Type)))
+		names = append(names, a.Name)
+	}
+	sig := "ctx context.Context"
+	args := "ctx"
+	if len(params) > 0 {
+		sig += ", " + strings.Join(params, ", ")
+		args += ", " + strings.Join(names, ", ")
+	}
+	if o.Result == nil {
+		w("\nfunc (x %s) %s(%s) error {\n\tt0 := time.Now()\n\terr := x.v.%s(%s)\n\tx.o(%q, t0, err)\n\treturn err\n}\n", recv, o.Method, sig, o.Method, args, o.Name)
+		return
+	}
+	w("\nfunc (x %s) %s(%s) (%s, error) {\n\tt0 := time.Now()\n\tres, err := x.v.%s(%s)\n\tx.o(%q, t0, err)\n\treturn res, err\n}\n", recv, o.Method, sig, ts(o.Result), o.Method, args, o.Name)
 }

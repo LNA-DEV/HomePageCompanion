@@ -9,6 +9,7 @@ import (
 
 	"github.com/LNA-DEV/HomePageCompanion/capability/storage"
 	"github.com/LNA-DEV/HomePageCompanion/companion"
+	"github.com/LNA-DEV/HomePageCompanion/companion/wire"
 	"github.com/LNA-DEV/HomePageCompanion/core/internal/conf"
 )
 
@@ -26,12 +27,10 @@ type instance struct {
 	service         *serviceInstance // set for an instance of a service
 }
 
-// provides reports whether the instance offers the capability, in a
-// compatible version (same name and major).
-func provides(info companion.Info, svc *serviceInstance, cap companion.Capability) bool {
-	if svc != nil {
-		return svc.offers(cap)
-	}
+// provides reports whether the building block offers the capability, in a
+// compatible version (same name and major). A service's Info comes from its
+// manifest.
+func provides(info companion.Info, cap companion.Capability) bool {
 	for _, p := range info.Provides {
 		if p.Name == cap.Name && p.Major == cap.Major {
 			return true
@@ -42,7 +41,7 @@ func provides(info companion.Info, svc *serviceInstance, cap companion.Capabilit
 
 // provide returns the implementation of cap.
 func (in *instance) provide(cap companion.Capability) (any, error) {
-	if !provides(in.info, in.service, cap) {
+	if !provides(in.info, cap) {
 		return nil, fmt.Errorf("%s does not offer %s", in.id, cap)
 	}
 	if in.service != nil {
@@ -61,7 +60,8 @@ type planned struct {
 	values          map[string]any
 	slots           map[string][]string
 	service         *conf.ServiceBlock
-	auto            bool // added by the core (the storage default)
+	locked          *wire.LockedService // a service's entry in companion.lock
+	auto            bool                // added by the core (the storage default)
 }
 
 // deps are the instances it is connected to.
@@ -76,8 +76,9 @@ func (p *planned) deps() []string {
 
 // plan turns the config into instances in start order: storage first, then
 // every instance after the ones it is connected to. It checks everything it
-// can without starting anything.
-func (c *Core) plan(f *conf.File) ([]*planned, error) {
+// can without starting anything. Services are planned with the manifests
+// companion.lock recorded.
+func (c *Core) plan(f *conf.File, lock *wire.Lock) ([]*planned, error) {
 	var ps []*planned
 	byID := map[string]*planned{}
 	var errs []string
@@ -88,11 +89,28 @@ func (c *Core) plan(f *conf.File) ([]*planned, error) {
 			continue
 		}
 		if ci.Service {
+			if _, both := f.Modules[ci.Block]; both {
+				errs = append(errs, fmt.Sprintf("%s: %s is configured as a module and as a service", p.id, ci.Block))
+				continue
+			}
 			sb := f.Services[ci.Block]
-			p.service = &sb
-			p.info = serviceInfo(ci.Block)
-			p.values = ci.Values
-			_, p.slots, _ = splitSlots(p.info, ci.Values)
+			ls, ok := lock.Services[ci.Block]
+			if !ok {
+				errs = append(errs, fmt.Sprintf("%s: service %s is %v", p.id, ci.Block, errServiceNotApplied))
+				continue
+			}
+			if err := ls.Manifest.Check(); err != nil {
+				errs = append(errs, fmt.Sprintf("%s: service %s: %v", p.id, ci.Block, err))
+				continue
+			}
+			p.service, p.locked = &sb, &ls
+			p.info = serviceInfo(ci.Block, &ls.Manifest)
+			rest, slots, err := splitSlots(p.info, ci.Values)
+			if err != nil {
+				errs = append(errs, fmt.Sprintf("%s: %v", p.id, err))
+				continue
+			}
+			p.values, p.slots = rest, slots
 		} else {
 			info, ok := companion.Lookup(ci.Block)
 			if !ok {
@@ -123,14 +141,14 @@ func (c *Core) plan(f *conf.File) ([]*planned, error) {
 	} {
 		var have []*planned
 		for _, p := range ps {
-			if provides(p.info, nil, st.cap) {
+			if provides(p.info, st.cap) {
 				have = append(have, p)
 			}
 		}
 		if st.ref != "" {
 			b, n := conf.Ref(st.ref)
 			id := companion.InstanceID(b, n)
-			if p, ok := byID[id]; !ok || !provides(p.info, nil, st.cap) {
+			if p, ok := byID[id]; !ok || !provides(p.info, st.cap) {
 				errs = append(errs, fmt.Sprintf("core: %s is not a configured %s instance", id, st.cap))
 			}
 			continue
@@ -148,7 +166,7 @@ func (c *Core) plan(f *conf.File) ([]*planned, error) {
 		}
 		var compiled []companion.Info
 		for _, info := range companion.Registered() {
-			if provides(info, nil, st.cap) {
+			if provides(info, st.cap) {
 				compiled = append(compiled, info)
 			}
 		}
@@ -182,7 +200,7 @@ func (c *Core) plan(f *conf.File) ([]*planned, error) {
 					errs = append(errs, fmt.Sprintf("%s: slot %s: no instance %s", p.id, s.Name, id))
 					continue
 				}
-				if !provides(q.info, serviceOf(q), s.Needs) {
+				if !provides(q.info, s.Needs) {
 					errs = append(errs, fmt.Sprintf("%s: slot %s: %s does not offer %s", p.id, s.Name, id, s.Needs))
 				}
 			}
@@ -193,13 +211,6 @@ func (c *Core) plan(f *conf.File) ([]*planned, error) {
 		return nil, fmt.Errorf("%s", strings.Join(errs, "\n"))
 	}
 	return order(ps)
-}
-
-func serviceOf(p *planned) *serviceInstance {
-	if p.service == nil {
-		return nil
-	}
-	return &serviceInstance{block: p.block, manifest: manifestFor(p.block)}
 }
 
 // order sorts the instances so each comes after the ones it is connected
@@ -258,6 +269,12 @@ func order(ps []*planned) ([]*planned, error) {
 // sameAs reports whether a running instance matches its planned successor,
 // so a reload can keep it.
 func (in *instance) sameAs(p *planned) bool {
+	if (in.service == nil) != (p.service == nil) {
+		return false
+	}
+	if in.service != nil && (!reflect.DeepEqual(*in.service.locked, *p.locked) || !reflect.DeepEqual(*in.service.conf, *p.service)) {
+		return false
+	}
 	return in.block == p.block && in.name == p.name &&
 		reflect.DeepEqual(normalize(in.values), normalize(p.values)) &&
 		reflect.DeepEqual(normalizeSlots(in.slots), normalizeSlots(p.slots))

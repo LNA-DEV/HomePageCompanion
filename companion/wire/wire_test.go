@@ -240,3 +240,25 @@ func TestSignature(t *testing.T) {
 		}
 	}
 }
+
+func TestMeasure(t *testing.T) {
+	a, _ := wire.Lookup("social.publisher/v1")
+	var seen []string
+	impl := &publisher{err: errors.New("down")}
+	m := a.Measure(impl, func(op string, start time.Time, err error) {
+		seen = append(seen, fmt.Sprintf("%s:%v", op, err != nil))
+	})
+	p := m.(social.Publisher)
+	p.Describe(context.Background())
+	p.Publish(context.Background(), social.Post{})
+	m.(social.Lister).ListPosts(context.Background())
+	if _, ok := m.(social.Deleter); ok {
+		t.Fatal("measured wrapper deletes although the implementation does not")
+	}
+	if strings.Join(seen, ",") != "describe:false,publish:true,listPosts:false" {
+		t.Fatalf("observed %v", seen)
+	}
+	if got := a.Measure("not a publisher", nil); got != "not a publisher" {
+		t.Fatalf("wrapped a foreign value: %v", got)
+	}
+}

@@ -295,7 +295,11 @@ func configCmd(opts Options, args []string) error {
 		return err
 	}
 	c := New(opts)
-	ps, err := c.plan(f)
+	lock, _, err := c.services.readLock()
+	if err != nil {
+		return err
+	}
+	ps, err := c.plan(f, lock)
 	if err != nil {
 		return err
 	}

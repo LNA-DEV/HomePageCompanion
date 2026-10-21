@@ -12,6 +12,7 @@ import (
 
 	"github.com/LNA-DEV/HomePageCompanion/companion"
 	"github.com/LNA-DEV/HomePageCompanion/core/internal/logger"
+	"github.com/LNA-DEV/HomePageCompanion/internal/blocks"
 	"github.com/gin-gonic/gin"
 )
 
@@ -113,11 +114,15 @@ func (c *Core) viewOf(in *instance, full bool) InstanceView {
 	}
 	if in.service != nil {
 		v.Provides = in.service.provideNames()
+		// Running means the service answers and took its configuration.
+		if ready, problem := in.service.b.state(in.name); in.running && !ready {
+			v.Running, v.Error = false, problem
+		}
 	}
 	if full {
 		var secrets map[string]bool
 		if in.info.New != nil {
-			secrets = secretFields(reflectTypeOf(in.info.New()))
+			secrets = blocks.SecretFields(reflectTypeOf(in.info.New()))
 		}
 		v.Config = masked(in.values, secrets)
 		v.Schema = schemaOf(in.info)

@@ -27,6 +27,10 @@ const (
 
 var registerOnce sync.Once
 
+// RegisterStorage registers the test storage modules, for a test that
+// starts a core itself; New does it.
+func RegisterStorage() { registerStorage() }
+
 func registerStorage() {
 	registerOnce.Do(func() {
 		if _, ok := companion.Lookup(SQLID); !ok {

@@ -172,6 +172,8 @@ Rules:
 - `Companion-Instance: main` tells a service which of its instances is meant.
 - Third parties define their own capabilities in their own package as `x.<author>.<name>/v1`.
 
+As built (`cmd/hpc/gen*.go`, `companion/wire`): `hpc gen` reads the capability packages with `go/types` and writes `wire_gen.go` into each: a client (an implementation of the capability that posts to a provider), a server (answers the operations for an implementation) and a measuring wrapper, which the core puts around every connection for the calls, errors and latency per capability and instance in `/metrics`. Optional operations are interfaces named in `NewCapability(…, companion.Optional[social.Lister]())`; client and wrapper keep exactly the ones a provider offers visible to type assertions. A capability's sentinel errors travel as codes (`ErrRateLimited` as `rate_limited`) and come back as themselves. OpenAPI 3.1 goes to `docs/services/openapi/`, TypeScript types to `@companion/ui/capabilities/<package>`; a test fails when they are not up to date. `storage.*` stays Go only (`//hpc:local`). The protocol around them is `docs/services/protocol.md`.
+
 Starting set, derived from the code:
 
 | Capability | Operations | Provided by | Used by |
@@ -319,6 +321,8 @@ As built (`companion/oauth.go`, `core/oauth.go`): an instance implements `compan
 | Events | in-process bus with an outbox in the core's database: at least once, retried | `POST /events`, deduplicated by event ID |
 | Failures | `recover` and timeout around every job, handler and event; a memory leak still hits the whole process | a crash stays in the container; CPU and memory limits per service |
 | Logs | shared logger with `module=<id>` | stdout, read by the core through Docker |
+
+As built (`core/services.go`, package `service`): the core plans a service with the manifest `companion.lock` recorded, so a service that is down changes nothing but its own instances: they count as not running, calls to them fail as transient errors, and the core configures the service again as soon as it answers, also after a restart it notices through the configuration version `/health` reports. Instance jobs come from the manifest or from the answer to the configuration, because a module's schedule often is one of its config fields. Services reach the core on a listener of their own (`core.servicesListen`, `:3128`, never published), which the egress proxy shares. Logs: the SDKs send their lines to `/core/v1/logs` besides stdout, instead of the core reading them through Docker, which would need the Docker socket in the companion. `service.Serve(info)` runs any module as a service: its database is a SQLite file in the volume, its slots, secrets and events go through the core; the integration tests run the `mastodon` module that way, connected to `autoupload`.
 
 Today's public URLs stay as aliases: `/api/tiles/basemap/*` → `basemap`, `/api/tiles/gbif/*` → `gbif`, `/api/interactions/*` → `interactions`, `/api/webmention` → `webmention`, `/api/webpush/*` → `webpush`, `/api/microblog/*` → `microblog`, `/api/trips/*` → `trips`. The core refuses to start if two aliases collide.
 

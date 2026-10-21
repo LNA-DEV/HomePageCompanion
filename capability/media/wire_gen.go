@@ -4,6 +4,7 @@ package media
 
 import (
 	"context"
+	"time"
 
 	"github.com/LNA-DEV/HomePageCompanion/companion/wire"
 )
@@ -16,6 +17,7 @@ func init() {
 		Required:   []string{"resize", "readExif"},
 		Client:     newImageV1Client,
 		Server:     newImageV1Server,
+		Measure:    newImageV1Measured,
 	})
 }
 
@@ -62,4 +64,36 @@ func newImageV1Server(impl any) *wire.Server {
 		},
 	}}
 	return s
+}
+
+// imageV1Measured observes every call of an implementation of media.image/v1.
+type imageV1Measured struct {
+	v Image
+	o wire.Observe
+}
+
+// MeasuredImpl is the measured implementation (wire.Unmeasure).
+func (x *imageV1Measured) MeasuredImpl() any { return x.v }
+
+func (x *imageV1Measured) Resize(ctx context.Context, data []byte, limits Limits) ([]byte, error) {
+	t0 := time.Now()
+	res, err := x.v.Resize(ctx, data, limits)
+	x.o("resize", t0, err)
+	return res, err
+}
+
+func (x *imageV1Measured) ReadExif(ctx context.Context, data []byte) (Metadata, error) {
+	t0 := time.Now()
+	res, err := x.v.ReadExif(ctx, data)
+	x.o("readExif", t0, err)
+	return res, err
+}
+
+func newImageV1Measured(impl any, o wire.Observe) any {
+	v, ok := impl.(Image)
+	if !ok {
+		return impl
+	}
+	base := &imageV1Measured{v, o}
+	return base
 }

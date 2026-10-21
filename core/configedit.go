@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 
 	"github.com/LNA-DEV/HomePageCompanion/companion"
+	"github.com/LNA-DEV/HomePageCompanion/internal/blocks"
 	"github.com/gin-gonic/gin"
 	"gopkg.in/yaml.v3"
 )
@@ -48,7 +49,7 @@ func (c *Core) editInstance(in *instance, values map[string]any) error {
 	if in.service != nil || in.info.New == nil {
 		return fmt.Errorf("%s cannot be edited here", in.id)
 	}
-	secrets := secretFields(reflectTypeOf(in.info.New()))
+	secrets := blocks.SecretFields(reflectTypeOf(in.info.New()))
 	changes := map[string]any{}
 	for k, v := range values {
 		if s, ok := v.(string); ok && s == maskedValue && secrets[k] {
@@ -75,7 +76,7 @@ func (c *Core) editInstance(in *instance, values map[string]any) error {
 	if err != nil {
 		return err
 	}
-	if err := decodeConfig(in.info.New(), rest); err != nil {
+	if err := blocks.DecodeConfig(in.info.New(), rest); err != nil {
 		return err
 	}
 
