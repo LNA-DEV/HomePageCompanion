@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"testing/fstest"
 	"time"
 
 	"github.com/LNA-DEV/HomePageCompanion/capability/social"
@@ -618,5 +619,37 @@ func TestSchemaFlattensEmbeddedStructsAndSkipsUntagged(t *testing.T) {
 	}
 	if strings.Join(names, ",") != "caption,cron,token" {
 		t.Fatalf("fields %v", names)
+	}
+}
+
+// The shell: its files, its pages for any path, the UI SDK for service
+// pages; a shell of the SDK alone (hpc dev) serves the placeholder page.
+func TestShell(t *testing.T) {
+	shell := fstest.MapFS{
+		"index.html":             {Data: []byte("<title>shell</title>")},
+		"_app/immutable/app.js":  {Data: []byte("console.log(1)")},
+		"ui-sdk/companion-ui.js": {Data: []byte("export function connect() {}")},
+		"login.html":             {Data: []byte("<title>login</title>")},
+	}
+	h := companiontest.NewWith(t, "", companiontest.Options{Shell: shell})
+	for path, want := range map[string]string{"/": "<title>shell</title>", "/b/rss/feeds": "<title>shell</title>", "/login": "<title>login</title>", "/_app/immutable/app.js": "console.log(1)"} {
+		if w := h.Public("GET", path, nil); w.Code != 200 || w.Body.String() != want {
+			t.Errorf("%s: %d %q", path, w.Code, w.Body.String())
+		}
+	}
+	if w := h.Public("GET", "/_app/immutable/app.js", nil); !strings.Contains(w.Header().Get("Cache-Control"), "immutable") {
+		t.Errorf("immutable files: %q", w.Header().Get("Cache-Control"))
+	}
+	w := h.Public("GET", "/ui/sdk/companion-ui.js", nil)
+	if w.Code != 200 || w.Header().Get("Access-Control-Allow-Origin") != "*" || !strings.HasPrefix(w.Header().Get("Content-Type"), "text/javascript") {
+		t.Fatalf("the UI SDK: %d %v", w.Code, w.Header())
+	}
+
+	sdkOnly := companiontest.NewWith(t, "", companiontest.Options{Shell: fstest.MapFS{"ui-sdk/companion-ui.js": {Data: []byte("x")}}})
+	if w := sdkOnly.Public("GET", "/", nil); w.Code != 200 || !strings.Contains(w.Body.String(), "<title>Companion</title>") {
+		t.Fatalf("a shell without a page: %d %q", w.Code, w.Body.String())
+	}
+	if w := sdkOnly.Public("GET", "/ui/sdk/companion-ui.js", nil); w.Code != 200 {
+		t.Fatalf("its SDK: %d", w.Code)
 	}
 }

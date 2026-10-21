@@ -408,6 +408,8 @@ The same module ships as a service without changes: `func main() { service.Serve
 | `hpc test` | the tests of §6 for one building block, including the conformance suite of its capabilities |
 | `companiontest` | Go package with a test core: fakes in slots, events injected, jobs triggered |
 
+As built (`cmd/hpc/dev.go`, `cmd/hpc/test.go`, `sdk/python`): `hpc dev` builds the companion of `build.yaml` into `.hpc/dev`, runs it and rebuilds and restarts it when the local core or a local module changes; it rebuilds the module UIs only when a file under a `ui/` directory changed, and a failed build keeps the running companion. The shell runs in Vite's dev server in front of it (port 5173), with hot reload; the companion embeds only the UI SDK. A service in development runs from its source instead of a container: `--service lemmy="python3 services/lemmy/lemmy.py"` starts it at the `url:` of its block, restarts it when its source changes and writes its manifest into `companion.lock` when it changes, which a source mounted into a container could not do for every language. `hpc test <module dir>` runs `go vet` and `go test -race` there; `hpc test --run "<command>"` tests a service in any language: it starts the service next to a test core, configures its instances and runs the conformance suites of what its manifest offers through the wire protocol (`companiontest.PublisherConformance` for `social.publisher/v1`). The Python SDK uses only the standard library; the Lemmy service is built on it.
+
 ## 6. Tests
 
 Every stage is built with tests, and the CI only lets through what passed them. Today the CI builds and pushes images without running a single test, and two of the three critical findings of §3 sit in packages without any (`inventory`, `database`). The existing tests are green.
@@ -471,6 +473,8 @@ Gate: the shell contains no feature page.
 4. A first service as proof, e.g. `lemmy` in Python.
 
 Gate: a service in another language offers `social.publisher/v1` and can be connected to `autoupload`.
+
+As built: `services/lemmy`, in Python, offers `social.publisher/v1` and `social.interactions/v1` for a Lemmy account; `autoupload` posts photos of the feed to a community through it, with the image fetched through the core and uploaded to pict-rs. It passes the publisher's conformance suite with `hpc test`, and the Compose tests build it with `hpc apply` from this repository and post through it inside Docker, with only the granted hosts in reach (`e2e/lemmy_test.go`, `e2e/compose_test.go`).
 
 **No commit, no deploy** unless asked.
 

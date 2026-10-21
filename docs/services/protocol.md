@@ -157,3 +157,39 @@ Without the SDK the bridge is `postMessage` to `window.parent` with `'*'`:
 with `{type: "api", id, status, body}`), `{type: "navigate", to}`,
 `{type: "toast", message, kind}`, `{type: "resize", height}`. The shell sends
 `{type: "init", page, path, widget, dark, token}` and `{type: "theme", dark}`.
+
+## SDKs, development and tests
+
+- **Go**: `service.Serve(info)` (package `service`) runs any building block
+  as a service; the same module also compiles into the companion.
+- **Python**: `sdk/python/companion_service`, standard library only. A
+  `Service(id, name=…, version=…, config=[…], ui=…)` with decorators:
+  `@service.instance` on a class built once per instance with a `Context`
+  (`config`, `slots`, `targets`, `core`, `log`, `fetch`), whose methods carry
+  `@service.operation(capability, op)`, `@service.job(name, …)` and
+  `@service.events(type, …)`; `@service.route(method, path)` adds to its API
+  under `/api/b/<service>/`. `ctx.core` is the client for everything above:
+  `call` and `call_raw` for slots, documents, blobs, `blob_url`, `temp`,
+  secrets, `emit`, `metric`. Failures are `Error(code, message, cause,
+  http_status)`; the codes are the capability's (`rate_limited`,
+  `needs_image`, …). `service.run()` serves, and prints the manifest with
+  `COMPANION_MANIFEST=print`. `services/lemmy` is a complete service on it,
+  published as `ghcr.io/lna-dev/companion-lemmy`.
+- **Any other language**: the HTTP of this document; the operations of every
+  capability are in `docs/services/openapi/`.
+
+**Develop** a service outside Docker: give its block a `url:` and run it with
+`hpc dev --service lemmy="python3 services/lemmy/lemmy.py"`. `hpc dev` starts
+it with the variables above, pointed at the dev companion, restarts it when
+its source (`from: path:<dir>`, else the current directory) changes, and
+records its manifest and grants in `companion.lock` whenever they change.
+
+**Test** it with `hpc test --run "python3 services/lemmy/lemmy.py" --config
+lemmy.yaml`: hpc starts it next to a test core, configures the instances of
+`lemmy.yaml` (its block of `companion.yaml`, or a whole `companion.yaml`)
+and runs, through this protocol, the conformance suite of every capability
+its manifest offers against each of them; for `social.publisher/v1` it posts
+an image it serves itself. Point the instances at a fake of the platform,
+or, by hand, at a test account. `hpc test <module dir>` runs a module's
+`go vet` and `go test -race`, whose tests call the same suites from
+`companiontest` (`--live` adds `-tags live`).

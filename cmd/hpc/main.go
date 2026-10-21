@@ -22,6 +22,11 @@ commands:
   gen [-openapi dir] [-ts dir] [-check] [packages]
                   adapters, OpenAPI and TypeScript types from the capabilities
                   (default ./capability/...)
+  dev [-f build.yaml] [-c companion.yaml] [-d data] [--no-ui] [--ui-port 5173] [--service name="command"]
+                  run the companion; rebuild and restart it when the core or a
+                  local module changes, and serve the shell with hot reload;
+                  run a service (its block has a url:) from its source and
+                  restart it when that changes
   test [dir] [--live]
                   a module: go vet and go test -race, with the conformance
                   suites of its capabilities
@@ -50,6 +55,8 @@ func main() {
 		err = applyCmd(args)
 	case "test":
 		err = testCmd(args)
+	case "dev":
+		err = devCmd(args)
 	case "backup", "restore", "migrate", "secrets", "config", "modules", "version":
 		err = forward(cmd, args)
 	case "help", "-h", "--help":

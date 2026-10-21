@@ -18,6 +18,7 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"io/fs"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -58,6 +59,8 @@ type Options struct {
 	// ServicesListen is where services reach the core (default: a free
 	// port on 127.0.0.1).
 	ServicesListen string
+	// Shell is the built admin shell (default: none, the placeholder).
+	Shell fs.FS
 }
 
 // NewWith starts a core like New, with extra files and options.
@@ -79,7 +82,7 @@ func NewWith(t *testing.T, config string, o Options) *Harness {
 	}
 	t.Setenv("COMPANION_SECRET_KEY", "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=")
 	t.Setenv("TRUSTED_PROXIES", "")
-	c := core.New(core.Options{ConfigPath: cfgPath, DataDir: filepath.Join(dir, "data"), Logs: testWriter{t}, ServicesListen: o.ServicesListen})
+	c := core.New(core.Options{ConfigPath: cfgPath, DataDir: filepath.Join(dir, "data"), Logs: testWriter{t}, ServicesListen: o.ServicesListen, Shell: o.Shell})
 	if err := c.Start(context.Background()); err != nil {
 		t.Fatalf("core: %v", err)
 	}

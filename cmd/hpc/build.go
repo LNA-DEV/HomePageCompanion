@@ -211,10 +211,9 @@ var shell embed.FS
 var ui embed.FS
 
 func main() {
+	// Without index.html the companion serves a placeholder page.
 	if sub, err := fs.Sub(shell, "shell"); err == nil {
-		if _, err := fs.Stat(sub, "index.html"); err == nil {
-			core.SetShell(sub)
-		}
+		core.SetShell(sub)
 	}
 	entries, _ := fs.ReadDir(ui, "ui")
 	for _, e := range entries {

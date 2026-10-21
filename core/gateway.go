@@ -307,7 +307,8 @@ func (c *Core) serveShell(g *gin.Context) {
 		} else {
 			data, err = fs.ReadFile(shell, "index.html")
 			if err != nil {
-				g.Status(http.StatusNotFound)
+				// A shell of the UI SDK alone (hpc dev).
+				g.Data(http.StatusOK, "text/html; charset=utf-8", []byte(placeholderShell))
 				return
 			}
 			name = "index.html"
