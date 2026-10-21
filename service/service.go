@@ -272,7 +272,7 @@ func (s *Service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		in := s.instance(name)
 		if in == nil {
-			wire.WriteError(w, &wire.Error{Code: "unknown_instance", Message: fmt.Sprintf("%s has no instance %q", s.info.ID, name)})
+			wire.WriteError(w, &wire.Error{Code: wire.CodeUnknownInstance, Message: fmt.Sprintf("%s has no instance %q", s.info.ID, name)})
 			return
 		}
 		srv := in.servers[rest[:i]]
@@ -462,7 +462,10 @@ func (s *Service) runJob(w http.ResponseWriter, r *http.Request, name, job strin
 				}
 			}
 		}
-	} else if in := s.instance(name); in != nil {
+	} else if in := s.instance(name); in == nil {
+		wire.WriteError(w, &wire.Error{Code: wire.CodeUnknownInstance, Message: fmt.Sprintf("%s has no instance %q", s.info.ID, name)})
+		return
+	} else {
 		if j, ok := in.jobs[job]; ok && j.Run != nil {
 			run = j.Run
 			if j.Timeout > 0 {
@@ -512,6 +515,12 @@ func (s *Service) event(w http.ResponseWriter, r *http.Request, name string, bod
 		if h, ok := in.value.(companion.EventHandler); ok {
 			err = safely(func() error { return h.HandleEvent(r.Context(), ev) })
 		}
+	} else if name != "" {
+		s.mu.Lock()
+		delete(s.seen, ev.ID)
+		s.mu.Unlock()
+		wire.WriteError(w, &wire.Error{Code: wire.CodeUnknownInstance, Message: fmt.Sprintf("%s has no instance %q", s.info.ID, name)})
+		return
 	} else if s.info.OnEvent != nil {
 		err = safely(func() error { return s.info.OnEvent(s.mc, ev) })
 	}

@@ -7,9 +7,10 @@ func MarkInterruptedRuns(c *Core) { c.markInterruptedRuns() }
 
 // SetServiceIntervals shortens the services' health checks for a test.
 func SetServiceIntervals(check, retry time.Duration) (restore func()) {
-	c, r := serviceCheckEvery, serviceRetryEvery
-	serviceCheckEvery, serviceRetryEvery = check, retry
-	return func() { serviceCheckEvery, serviceRetryEvery = c, r }
+	c, r := serviceCheckEvery.Load(), serviceRetryEvery.Load()
+	serviceCheckEvery.Store(int64(check))
+	serviceRetryEvery.Store(int64(retry))
+	return func() { serviceCheckEvery.Store(c); serviceRetryEvery.Store(r) }
 }
 
 // EgressGranted is the egress grant check.

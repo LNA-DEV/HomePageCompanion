@@ -130,11 +130,33 @@ jobs:
           retention-days: 14
           if-no-files-found: ignore
 
+  # A service in its own container next to the companion, started by
+  # hpc apply: its slot works, an unconnected one does not, only the granted
+  # host is reachable and its container is locked down (e2e/compose_test.go).
+  services:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: e2e
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: '**/go.sum'
+      - name: build the companion image
+        working-directory: .
+        run: docker build -t companion:test .
+      - name: Docker Compose tests
+        run: go test -tags compose -count=1 -v -run Compose ./...
+        env:
+          COMPANION_IMAGE: companion:test
+
   # One image: the shell, the core and every module of build.yaml. Built on
   # every push so a broken image is red too; pushed to GHCR from main and
   # version tags only.
   image:
-    needs: [go, go-legacy, web, integration, ui]
+    needs: [go, go-legacy, web, integration, ui, services]
     runs-on: ubuntu-latest
     permissions:
       contents: read

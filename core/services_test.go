@@ -613,3 +613,30 @@ func TestEgressProxy(t *testing.T) {
 		t.Errorf("denied egress not counted:\n%s", m)
 	}
 }
+
+// A service that restarted between two health checks answers that it does
+// not know the instance; the core configures it again at once instead of
+// waiting for the next check.
+func TestServiceLostItsConfiguration(t *testing.T) {
+	rs := startRemote(t, allGrants, remoteConfig)
+	h := rs.h
+	waitRunning(t, h, "remote:main", true)
+	t.Cleanup(core.SetServiceIntervals(time.Hour, time.Hour))
+	time.Sleep(300 * time.Millisecond) // the running check picks up the long interval
+	c := companiontest.Instance[*consumer](h, "t.consumer:a")
+
+	rs.handler.set(rs.newService(t))
+	_, err := c.Target.Publish(context.Background(), social.Post{Text: "x"})
+	if err == nil || !strings.Contains(err.Error(), "lost its configuration") || social.Classify(err).Cause != social.CauseTransient {
+		t.Fatalf("first call after the restart: %v", err)
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		if _, err := c.Target.Publish(context.Background(), social.Post{Text: "y"}); err == nil {
+			break
+		} else if time.Now().After(deadline) {
+			t.Fatalf("not configured again: %v", err)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+}

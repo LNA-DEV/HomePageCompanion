@@ -60,3 +60,7 @@ web/build-modules/
 web/test-results/
 web/playwright-report/
 web/ui-screenshots/
+
+# hpc apply: the generated compose file and the git sources it builds
+/compose.generated.yml
+/.hpc/

@@ -22,6 +22,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/LNA-DEV/HomePageCompanion/companion"
@@ -40,10 +41,12 @@ import (
 
 // The health check: every serviceRetryEvery until the service answers and
 // is configured, then every serviceCheckEvery. Tests shorten them.
-var (
-	serviceCheckEvery = 10 * time.Second
-	serviceRetryEvery = 2 * time.Second
-)
+var serviceCheckEvery, serviceRetryEvery atomic.Int64
+
+func init() {
+	serviceCheckEvery.Store(int64(10 * time.Second))
+	serviceRetryEvery.Store(int64(2 * time.Second))
+}
 
 const (
 	defaultServicePort    = 8080
@@ -189,7 +192,27 @@ func (sc serviceCaller) Call(ctx context.Context, op string, req wire.Request, o
 		return err
 	}
 	h := wire.HTTP{Client: b.m.client, URL: b.baseURL() + sc.path, Prepare: b.signer(sc.s.name)}
-	return h.Call(ctx, op, req, out)
+	return b.noteLost(h.Call(ctx, op, req, out))
+}
+
+// noteLost notices a service that no longer knows its instances, because
+// it restarted between two health checks, and configures it again at once.
+func (b *svcBlock) noteLost(err error) error {
+	var we *wire.Error
+	if !errors.As(err, &we) || we.Code != wire.CodeUnknownInstance {
+		return err
+	}
+	b.mu.Lock()
+	b.configured = ""
+	kick := b.kick
+	b.mu.Unlock()
+	if kick != nil {
+		select {
+		case kick <- struct{}{}:
+		default:
+		}
+	}
+	return &wire.Error{Code: wire.CodeUnavailable, Message: fmt.Sprintf("service %s lost its configuration (restarted?); configuring it again", b.id)}
 }
 
 // svcBlock is one service: its container, its token, its instances and
@@ -391,9 +414,9 @@ func (b *svcBlock) loop() {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		b.check(ctx)
 		cancel()
-		next := serviceCheckEvery
+		next := time.Duration(serviceCheckEvery.Load())
 		if b.readyFor("") != nil {
-			next = serviceRetryEvery
+			next = time.Duration(serviceRetryEvery.Load())
 		}
 		if !t.Stop() {
 			select {
@@ -510,7 +533,7 @@ func (b *svcBlock) do(ctx context.Context, method, path, instance string, body [
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode/100 != 2 {
-		return wire.ReadError(resp)
+		return b.noteLost(wire.ReadError(resp))
 	}
 	if out == nil {
 		return nil

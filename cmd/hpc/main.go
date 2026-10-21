@@ -16,6 +16,9 @@ const usage = `usage: hpc <command> [flags]
 commands:
   build [-f build.yaml] [-o companion] [--shell dir | --no-shell] [--work dir] [--version v]
                   compile the modules of build.yaml into one program
+  apply [-c data/companion.yaml] [-f docker-compose.yml] [-o compose.generated.yml] [--yes] [--dry-run] [--no-up]
+                  start the services of companion.yaml with docker compose,
+                  after showing and confirming their rights
   gen [-openapi dir] [-ts dir] [-check] [packages]
                   adapters, OpenAPI and TypeScript types from the capabilities
                   (default ./capability/...)
@@ -36,6 +39,8 @@ func main() {
 		err = buildCmd(args)
 	case "gen":
 		err = genCmd(args)
+	case "apply":
+		err = applyCmd(args)
 	case "backup", "restore", "migrate", "secrets", "config", "modules", "version":
 		err = forward(cmd, args)
 	case "help", "-h", "--help":

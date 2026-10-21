@@ -81,6 +81,9 @@ const (
 	CodeUnsupported = "unsupported" // the operation is not offered
 	CodeUnavailable = "unavailable" // the provider did not answer properly
 	CodeInternal    = "internal"    // anything else
+	// CodeUnknownInstance: the service does not know the instance it was
+	// called for, it lost its configuration.
+	CodeUnknownInstance = "unknown_instance"
 )
 
 // Errors maps codes to a capability package's sentinel errors.

@@ -109,3 +109,21 @@ instances whose config did not change running.
 Nothing else is reachable: not the other services, not the core's admin API,
 and the internet only through the egress proxy (`HTTP_PROXY`), for the hosts
 the operator granted.
+
+## Running next to the companion
+
+`hpc apply` starts the service with these variables; an SDK reads them:
+
+| Variable | Value |
+|---|---|
+| `COMPANION_URL` | `http://companion:3128`, the core's API for services |
+| `COMPANION_TOKEN_FILE` | `/run/companion/token` |
+| `COMPANION_DATA` | `/data`, the volume (with the `volume` grant) |
+| `HTTP_PROXY`, `HTTPS_PROXY` (and lower case) | `http://companion:3128`, the egress proxy |
+| `NO_PROXY` | `companion` |
+| `PORT` | the manifest's port, when it is not 8080 |
+
+The container runs as a user other than root, on a read-only file system with
+`/tmp` in memory, without capabilities. The proxy refuses hosts outside the
+grant with `403`; outside Docker (a service run by hand, `url:` in
+companion.yaml) it needs `Proxy-Authorization: Basic <service>:<token>`.

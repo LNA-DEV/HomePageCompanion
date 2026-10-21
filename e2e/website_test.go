@@ -43,7 +43,6 @@ const photo = "watzmann"
 // adminKey is how scripts (bruno/) authenticate.
 var adminKey = map[string]string{"Authorization": "ApiKey fixture-admin-key"}
 
-
 var requests = []request{
 	{name: "health", path: "/health"},
 	{name: "likes-all", path: "/api/interactions/post/all/" + photo},
