@@ -24,7 +24,7 @@ func importLegacy(mc companion.ModuleContext, l *companion.Legacy) error {
 	connOf := map[string]string{} // old target name → connection name
 	for _, c := range l.Connections {
 		if _, ok := connOf[c.TargetName]; !ok {
-			connOf[c.TargetName] = c.Name
+			connOf[c.TargetName] = companion.LegacyName(c.Name)
 		}
 	}
 	targetOf := func(platform, targetName string) (string, bool) {
@@ -55,7 +55,7 @@ func importLegacy(mc companion.ModuleContext, l *companion.Legacy) error {
 				kind = feed.KindArticle
 			}
 			if !l.Check {
-				upsertPost(mc, Post{ItemID: r.GUID, Source: "rss:" + r.FeedName, Kind: kind, Title: r.Title, Link: r.Link,
+				upsertPost(mc, Post{ItemID: r.GUID, Source: "rss:" + companion.LegacyName(r.FeedName), Kind: kind, Title: r.Title, Link: r.Link,
 					ImageURL: r.ImageURL, Published: r.Published, InFeed: !r.Deleted})
 			}
 		}
@@ -123,7 +123,7 @@ func importLegacy(mc companion.ModuleContext, l *companion.Legacy) error {
 				continue
 			}
 			src := "autoupload"
-			conn := r.ConnectionName
+			conn := companion.LegacyName(r.ConnectionName)
 			if r.Source == "microblog" {
 				src, conn = "microblog", ""
 			}

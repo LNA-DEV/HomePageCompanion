@@ -4,7 +4,7 @@
 set -euo pipefail
 root="$(cd "$(dirname "$0")/.." && pwd)"
 status=0
-for dir in "$root" "$root"/modules/*/; do
+for dir in "$root" "$root"/modules/*/ "$root"/e2e/; do
 	dir="${dir%/}"
 	[[ -f "$dir/go.mod" ]] || continue
 	echo "== ${dir#"$root"/}"

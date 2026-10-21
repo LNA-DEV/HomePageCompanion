@@ -1,0 +1,16 @@
+{
+  "status": 200,
+  "header": {
+    "Content-Type": "application/json; charset=utf-8"
+  },
+  "json": [
+    {
+      "count": 7,
+      "platform": "mastodon"
+    },
+    {
+      "count": 0,
+      "platform": "native"
+    }
+  ]
+}

@@ -24,7 +24,7 @@ func init() {
 		Name:    "Webmentions",
 		New:     func() companion.Instance { return new(Receiver) },
 		Slots:   []companion.Slot{{Name: "notify", Needs: notify.NotifyV1, Optional: true}},
-		Start:   migrate,
+		Migrate: migrate,
 		Routes:  routes,
 		Aliases: []string{"/api/webmention"},
 		Import:  importLegacy,

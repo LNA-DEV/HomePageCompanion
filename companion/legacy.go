@@ -2,6 +2,7 @@ package companion
 
 import (
 	"fmt"
+	"strings"
 
 	"gorm.io/gorm"
 )
@@ -33,7 +34,35 @@ type LegacyTarget struct {
 }
 
 // InstanceID is the instance the target became.
-func (t LegacyTarget) InstanceID() string { return InstanceID(t.Platform, t.Name) }
+func (t LegacyTarget) InstanceID() string { return InstanceID(t.Platform, LegacyName(t.Name)) }
+
+// LegacyName is the instance name an old config name became: lower case,
+// every run of other characters than a-z, 0-9, '.', '_' and '-' one '-'
+// ("Photo RSS" → "photo-rss"). Names that were valid stay as they were.
+func LegacyName(name string) string {
+	var b strings.Builder
+	dash := false
+	for _, r := range strings.ToLower(strings.TrimSpace(name)) {
+		if r >= 'a' && r <= 'z' || r >= '0' && r <= '9' || r == '.' || r == '_' || r == '-' {
+			b.WriteRune(r)
+			dash = false
+		} else if !dash && b.Len() > 0 {
+			b.WriteByte('-')
+			dash = true
+		}
+	}
+	out := strings.Trim(b.String(), "-.")
+	if out == "" {
+		return "default"
+	}
+	return out
+}
+
+// ValidInstanceName reports whether a name may name an instance: it is
+// used in references ("rss:photos"), URLs and job keys.
+func ValidInstanceName(name string) bool {
+	return name != "" && LegacyName(name) == name
+}
 
 // LegacyConnection is one entry of the old connections[].
 type LegacyConnection struct {

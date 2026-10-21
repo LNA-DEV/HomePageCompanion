@@ -1,0 +1,20 @@
+{
+  "status": 200,
+  "header": {
+    "Content-Type": "application/json"
+  },
+  "json": [
+    {
+      "likes": 5,
+      "platform": "bluesky"
+    },
+    {
+      "likes": 12,
+      "platform": "mastodon"
+    },
+    {
+      "likes": 2,
+      "platform": "native"
+    }
+  ]
+}

@@ -33,7 +33,7 @@ func init() {
 		},
 		Subscribes: []string{social.EventPostPublished, social.EventPostRemoved},
 		OnEvent:    onEvent,
-		Start:      migrate,
+		Migrate:    migrate,
 		Routes:     routes,
 		Aliases:    []string{"/api/interactions"},
 		Import:     importLegacy,

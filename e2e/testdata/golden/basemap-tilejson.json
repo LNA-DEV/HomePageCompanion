@@ -1,0 +1,30 @@
+{
+  "status": 200,
+  "header": {
+    "Cache-Control": "public, max-age=3600",
+    "Content-Type": "application/json"
+  },
+  "json": {
+    "attribution": "© OpenStreetMap",
+    "bounds": [
+      -180,
+      -85.0511287,
+      180,
+      85.0511287
+    ],
+    "center": [
+      0,
+      0,
+      0
+    ],
+    "maxzoom": 15,
+    "minzoom": 0,
+    "scheme": "xyz",
+    "tilejson": "3.0.0",
+    "tiles": [
+      "https://companion.test/api/tiles/basemap/20261005/{z}/{x}/{y}.mvt"
+    ],
+    "vector_layers": null,
+    "version": "4.15.2"
+  }
+}

@@ -27,7 +27,7 @@ func init() {
 		Name:     "Web Push",
 		New:      func() companion.Instance { return new(Audience) },
 		Provides: []companion.Capability{notify.NotifyV1},
-		Start:    migrate,
+		Migrate:  migrate,
 		Routes:   routes,
 		Aliases:  []string{"/api/webpush"},
 		Import:   importLegacy,

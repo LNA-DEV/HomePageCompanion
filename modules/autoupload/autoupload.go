@@ -37,6 +37,7 @@ func init() {
 		},
 		Subscribes: []string{social.EventPostPublished, social.EventPostFailed, social.EventPostRemoved, social.EventStatsUpdated, feed.EventItemDiscovered},
 		OnEvent:    onEvent,
+		Migrate:    migrate,
 		Start:      start,
 		Routes:     routes,
 		Aliases:    []string{"/api/upload", "/api/backfill"},

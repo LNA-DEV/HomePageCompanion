@@ -27,7 +27,7 @@ func init() {
 		Name:     "Feeds",
 		New:      func() companion.Instance { return new(Source) },
 		Provides: []companion.Capability{feed.SourceV1},
-		Start:    migrate,
+		Migrate:  migrate,
 		Routes:   routes,
 		Import:   importLegacy,
 		UI:       ui,

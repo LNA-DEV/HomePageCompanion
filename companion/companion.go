@@ -89,6 +89,11 @@ type Info struct {
 	Subscribes []string
 	OnEvent    func(mc ModuleContext, ev Event) error
 
+	// Migrate creates or updates the module's tables. The core runs it once
+	// per start, before Start, and before Import, without starting
+	// anything else.
+	Migrate func(mc ModuleContext) error
+
 	// Start and Stop run once for the module, after all instances started
 	// and before they stop.
 	Start func(mc ModuleContext) error

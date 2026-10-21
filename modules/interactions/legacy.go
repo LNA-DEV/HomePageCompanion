@@ -23,13 +23,22 @@ func importLegacy(mc companion.ModuleContext, l *companion.Legacy) error {
 		}
 		return "", false
 	}
-	likes := map[string]int{} // source|item|target → count
+	// source|item|target → the last count and when it was fetched; an old
+	// row means the likes were fetched at least once.
+	type count struct {
+		n  int
+		at time.Time
+	}
+	likes := map[string]count{}
 	if l.HasTable("interactions") {
 		var rows []struct {
 			Source, ItemID, Platform, TargetName string
 			LikeCount                            int
+			UpdatedAt                            time.Time
 		}
-		l.DB.Raw("SELECT COALESCE(source, 'rss') AS source, item_id, platform, target_name, like_count FROM interactions").Scan(&rows)
+		if err := l.DB.Raw("SELECT COALESCE(source, 'rss') AS source, item_id, platform, target_name, like_count, updated_at FROM interactions").Scan(&rows).Error; err != nil {
+			return err
+		}
 		for _, r := range rows {
 			if r.Platform == "native" {
 				if !l.Check {
@@ -38,16 +47,15 @@ func importLegacy(mc companion.ModuleContext, l *companion.Legacy) error {
 				continue
 			}
 			if t, ok := targetOf(r.Platform, r.TargetName); ok {
-				likes[r.Source+"|"+r.ItemID+"|"+t] = r.LikeCount
+				likes[r.Source+"|"+r.ItemID+"|"+t] = count{r.LikeCount, r.UpdatedAt}
 			}
 		}
 	}
 	n := 0
 	add := func(t Tracked, likeKey string) {
-		t.Likes = likes[likeKey]
-		now := time.Now()
-		if t.Likes > 0 {
-			t.LikesAt = &now
+		if c, ok := likes[likeKey]; ok {
+			at := c.at
+			t.Likes, t.LikesAt = c.n, &at
 		}
 		n++
 		if !l.Check {

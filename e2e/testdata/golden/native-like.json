@@ -1,0 +1,12 @@
+{
+  "status": 200,
+  "header": {
+    "Content-Type": "application/json; charset=utf-8"
+  },
+  "json": {
+    "has_liked": true,
+    "like_count": 3,
+    "success": true,
+    "token": "d5f23fb10e6ae5566d22bb7a017ef96c3594a9202f8953708e9af238b0080694"
+  }
+}

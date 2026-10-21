@@ -1,0 +1,12 @@
+{
+  "status": 200,
+  "header": {
+    "Content-Type": "application/json"
+  },
+  "json": [
+    {
+      "likes": 4,
+      "platform": "mastodon"
+    }
+  ]
+}

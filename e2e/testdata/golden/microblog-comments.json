@@ -1,0 +1,20 @@
+{
+  "status": 200,
+  "header": {
+    "Content-Type": "application/json; charset=utf-8"
+  },
+  "json": [
+    {
+      "author": "Jane",
+      "authorUrl": "https://mastodon.example/@jane",
+      "avatarUrl": "https://mastodon.example/a.png",
+      "body": "\u003cp\u003eLovely!\u003c/p\u003e",
+      "externalId": "r1",
+      "id": 1,
+      "importedAt": "2026-08-24T10:00:00Z",
+      "platform": "mastodon",
+      "postId": 1,
+      "postedAt": "2026-08-23T10:00:00Z"
+    }
+  ]
+}

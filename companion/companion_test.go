@@ -91,3 +91,27 @@ func TestEventDecode(t *testing.T) {
 		t.Fatal(v, err)
 	}
 }
+
+func TestLegacyName(t *testing.T) {
+	for in, want := range map[string]string{
+		"Photo RSS":      "photo-rss",
+		"main-mastodon":  "main-mastodon",
+		" Blog / Posts ": "blog-posts",
+		"Ünïcode feed":   "n-code-feed",
+		"a.b_c":          "a.b_c",
+		"---":            "default",
+		"":               "default",
+	} {
+		if got := LegacyName(in); got != want {
+			t.Errorf("LegacyName(%q) = %q, want %q", in, got, want)
+		}
+	}
+	for name, ok := range map[string]bool{"main": true, "photo-rss": true, "Photo RSS": false, "": false, "a:b": false, "-x": false} {
+		if ValidInstanceName(name) != ok {
+			t.Errorf("ValidInstanceName(%q) != %v", name, ok)
+		}
+	}
+	if id := (LegacyTarget{Name: "Main Mastodon", Platform: "mastodon"}).InstanceID(); id != "mastodon:main-mastodon" {
+		t.Errorf("target instance %s", id)
+	}
+}

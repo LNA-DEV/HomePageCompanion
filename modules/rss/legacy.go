@@ -35,9 +35,9 @@ func importLegacy(mc companion.ModuleContext, l *companion.Legacy) error {
 	}
 	names := map[uint]string{}
 	for _, f := range feeds {
-		names[f.ID] = f.FeedName
+		names[f.ID] = companion.LegacyName(f.FeedName)
 		updated := f.UpdatedAt
-		row := Feed{Instance: f.FeedName, URL: f.FeedURL, Title: f.Title, Description: f.Description, Link: f.Link,
+		row := Feed{Instance: names[f.ID], URL: f.FeedURL, Title: f.Title, Description: f.Description, Link: f.Link,
 			Language: f.Language, Copyright: f.Copyright, Generator: f.Generator, FetchedAt: &updated}
 		if !l.Check {
 			if err := mc.DB().Save(&row).Error; err != nil {

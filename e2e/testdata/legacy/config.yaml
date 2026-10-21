@@ -1,0 +1,57 @@
+security:
+  apiKey: ${ADMIN_API_KEY}
+  ipHashSalt: ${IP_HASH_SALT}
+  domain: example.com
+
+datasources:
+  rss:
+    - name: "Photo RSS"
+      feedUrl: "http://127.0.0.1:9/gallery/index.xml"
+      itemType: image
+
+targets:
+  - name: main-pixelfed
+    platform: pixelfed
+    pat: ${PIXELFED_PAT}
+    instance: https://pixelfed.example
+  - name: main-bluesky
+    platform: bluesky
+    username: me.example
+    pat: ${BLUESKY_PAT}
+  - name: main-instagram
+    platform: instagram
+    accessToken: ${INSTAGRAM_ACCESS_TOKEN}
+    accountId: "1789"
+  - name: main-mastodon
+    platform: mastodon
+    instance: https://mastodon.example
+    pat: ${MASTODON_PAT}
+
+connections:
+  - name: mastodon
+    sourceName: Photo RSS
+    targetName: main-mastodon
+    caption: "More at https://example.com/gallery"
+    cron: "0 0 18 * * *"
+  - name: pixelfed
+    sourceName: Photo RSS
+    targetName: main-pixelfed
+    includeAltText: true
+
+microblog:
+  publishTo: [main-mastodon, main-bluesky]
+
+webpush:
+  subscriberMail: mailto:admin@example.com
+
+storage:
+  bucketUrl: "file://${FIXTURE_BUCKET}"
+  prefix: home-page-companion
+
+basemap:
+  enabled: true
+  schedule: ""
+  publicUrl: https://companion.test/api/tiles/basemap
+
+gbif:
+  baseUrl: ${FIXTURE_GBIF}

@@ -7,3 +7,4 @@ interactions
 logger
 microblog
 webpush
+cmd/legacyfixture   # writes the e2e fixture; the e2e test is its test

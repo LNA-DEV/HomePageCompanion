@@ -315,7 +315,7 @@ func ImportLegacy(mc companion.ModuleContext, l *companion.Legacy, platform stri
 		}
 		var target *companion.InstanceRef
 		for _, in := range mc.Instances() {
-			if in.Name == r.TargetName {
+			if in.Name == companion.LegacyName(r.TargetName) {
 				in := in
 				target = &in
 			}

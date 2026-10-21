@@ -1,0 +1,23 @@
+{
+  "status": 200,
+  "header": {
+    "Content-Type": "application/json; charset=utf-8"
+  },
+  "json": {
+    "body": "Hello from the mountains",
+    "commentCount": 1,
+    "createdAt": "2026-08-22T10:00:00Z",
+    "id": 1,
+    "imageAltText": "A summit cross",
+    "imageUrl": "/api/microblog/media/1f815a9799a61fb212f3996e292731b24f6199f43431b0b60e9e16be44e9976d.jpg",
+    "likeCount": 7,
+    "publications": [
+      {
+        "platform": "mastodon",
+        "postUrl": "https://mastodon.example/@me/444",
+        "targetName": "main-mastodon"
+      }
+    ],
+    "slug": "hello"
+  }
+}

@@ -1,0 +1,100 @@
+{
+  "status": 200,
+  "header": {
+    "Content-Type": "application/json; charset=utf-8"
+  },
+  "json": {
+    "slug": "scandinavia",
+    "stats": {
+      "cities": 3,
+      "countries": 3,
+      "daysElapsed": 9,
+      "daysTotal": 9,
+      "distanceKm": 650
+    },
+    "stops": [
+      {
+        "country": "Germany",
+        "dates": "Jul 1–2",
+        "id": "munich",
+        "lat": 48.137,
+        "lng": 11.575,
+        "name": "Munich",
+        "note": "",
+        "photos": [
+          {
+            "cap": "Marienplatz",
+            "src": "/api/trips/media/82c112ba48dc1e44cc1cf2eec6990dcd22c0e02d765b0478dcfea18d356ce53e.jpg"
+          }
+        ],
+        "status": "visited",
+        "transportIn": null
+      },
+      {
+        "country": "Sweden",
+        "dates": "Jul 3–5",
+        "id": "malmo",
+        "lat": 55.605,
+        "lng": 13,
+        "name": "Malmö",
+        "note": "",
+        "photos": [],
+        "status": "visited",
+        "transportIn": {
+          "countries": [
+            "Denmark"
+          ],
+          "distanceKm": 650,
+          "duration": "9h",
+          "geometry": [
+            [
+              48.137,
+              11.575
+            ],
+            [
+              53.55,
+              10
+            ],
+            [
+              55.605,
+              13
+            ]
+          ],
+          "label": "Drive",
+          "mode": "car",
+          "photos": [
+            {
+              "cap": "On the bridge",
+              "tint": "#336699"
+            }
+          ],
+          "waypoints": [
+            {
+              "lat": 53.55,
+              "lng": 10
+            }
+          ]
+        }
+      },
+      {
+        "country": "Sweden",
+        "dates": "Jul 6–",
+        "id": "gotland",
+        "lat": 57.64,
+        "lng": 18.29,
+        "name": "Gotland",
+        "note": "",
+        "photos": [],
+        "status": "visited",
+        "transportIn": {
+          "duration": "",
+          "label": "Fly",
+          "mode": "flight",
+          "photos": []
+        }
+      }
+    ],
+    "title": "Scandinavia",
+    "updatedAt": "2026-08-02T10:00:00Z"
+  }
+}

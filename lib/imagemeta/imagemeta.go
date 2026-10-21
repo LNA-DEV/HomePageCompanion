@@ -226,7 +226,6 @@ func toInt(v any) int {
 	}
 }
 
-
 // --- XMP dc:subject parser ---------------------------------------------------
 
 // parseXMPSubjects scans the XMP RDF/XML body for <dc:subject>/<rdf:Bag>/<rdf:li>

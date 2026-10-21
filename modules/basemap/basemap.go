@@ -42,7 +42,7 @@ func init() {
 		// The old companion kept its versions under maps/basemap/; the area
 		// stays, so a migrated installation serves them without a copy.
 		BlobArea: "maps/basemap",
-		Start:    migrate,
+		Migrate:  migrate,
 		Routes:   routes,
 		Aliases:  []string{tilesPath, tilesPath + ".json"},
 		Import:   importLegacy,

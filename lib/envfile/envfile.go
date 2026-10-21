@@ -168,9 +168,10 @@ func surroundingQuote(written []byte, input []byte, afterEnd int) byte {
 }
 
 // parsePlaceholder splits the inside of a `${...}` form into (name, default, hasDefault).
-//   "VAR"               → ("VAR", "", false)
-//   "VAR:-some default" → ("VAR", "some default", true)
-//   ""                  → ("", "", false)
+//
+//	"VAR"               → ("VAR", "", false)
+//	"VAR:-some default" → ("VAR", "some default", true)
+//	""                  → ("", "", false)
 func parsePlaceholder(spec string) (name, def string, hasDefault bool) {
 	if idx := strings.Index(spec, ":-"); idx >= 0 {
 		return strings.TrimSpace(spec[:idx]), spec[idx+2:], true

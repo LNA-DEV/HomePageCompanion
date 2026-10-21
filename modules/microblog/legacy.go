@@ -72,14 +72,14 @@ func importLegacy(mc companion.ModuleContext, l *companion.Legacy) error {
 			likes_refreshed_at, comments_refreshed_at, created_at, updated_at FROM microblog_publications`).Scan(&pubs)
 	}
 	for _, p := range pubs {
-		target := companion.InstanceID(p.Platform, p.TargetName)
+		target := companion.InstanceID(p.Platform, companion.LegacyName(p.TargetName))
 		if t, ok := l.Target(p.TargetName); ok {
 			target = t.InstanceID()
 		}
 		if l.Check {
 			continue
 		}
-		db.Create(&Publication{ID: p.ID, PostID: p.PostID, Target: target, TargetName: p.TargetName, Platform: p.Platform,
+		db.Create(&Publication{ID: p.ID, PostID: p.PostID, Target: target, TargetName: companion.LegacyName(p.TargetName), Platform: p.Platform,
 			PostUrl: p.PostURL, ExternalID: p.ExternalID, VersionId: p.VersionID, Success: p.Success, ErrorMessage: p.ErrorMessage,
 			Likes: likes[slugOf[p.PostID]+"|"+p.TargetName], LikesRefreshedAt: p.LikesRefreshedAt, CommentsRefreshedAt: p.CommentsRefreshedAt,
 			CreatedAt: p.CreatedAt, UpdatedAt: p.UpdatedAt})

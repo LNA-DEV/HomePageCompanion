@@ -80,7 +80,8 @@ func TestCountsLikesOfEveryPublication(t *testing.T) {
 	}
 	var resp []interactions.LikesResponse
 	json.Unmarshal(h.Public("GET", "/api/interactions/post/all/photo-a", nil).Body.Bytes(), &resp)
-	if len(resp) != 2 || resp[0] != (interactions.LikesResponse{Platform: "mastodon", Likes: 18}) {
+	// Sorted by platform, as the old companion answered.
+	if len(resp) != 2 || resp[0] != (interactions.LikesResponse{Platform: "bluesky", Likes: 12}) || resp[1].Likes != 18 {
 		t.Fatalf("website response %+v", resp)
 	}
 	// One target by its old name.
@@ -169,7 +170,7 @@ func TestWebsiteLikes(t *testing.T) {
 func TestImportsTheOldLikes(t *testing.T) {
 	h, c := setup(t)
 	old := companiontest.LegacyDB(t,
-		`CREATE TABLE interactions (id integer primary key, source text, item_id text, platform text, target_name text, like_count integer)`,
+		`CREATE TABLE interactions (id integer primary key, source text, item_id text, platform text, target_name text, like_count integer, updated_at datetime)`,
 		`CREATE TABLE auto_upload_items (id integer primary key, platform text, item_id text, post_url text, version_id text, post_id text)`,
 		`CREATE TABLE native_likes (id integer primary key, item_id text, ip_hash text, token text, created_at datetime)`,
 		`INSERT INTO interactions (source, item_id, platform, target_name, like_count) VALUES ('rss', 'a', 'mastodon', 'mastodon', 18), ('rss', 'a', 'native', 'native', 1)`,
@@ -187,7 +188,8 @@ func TestImportsTheOldLikes(t *testing.T) {
 	}
 	var resp []interactions.LikesResponse
 	json.Unmarshal(h.Public("GET", "/api/interactions/post/all/a", nil).Body.Bytes(), &resp)
-	if len(resp) != 3 || resp[2] != (interactions.LikesResponse{Platform: "native", Likes: 1}) {
+	// Bluesky's likes were never fetched: not listed, as before.
+	if len(resp) != 2 || resp[0].Platform != "mastodon" || resp[1] != (interactions.LikesResponse{Platform: "native", Likes: 1}) {
 		t.Fatalf("after import %+v", resp)
 	}
 	_ = c

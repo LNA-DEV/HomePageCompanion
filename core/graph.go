@@ -83,6 +83,10 @@ func (c *Core) plan(f *conf.File) ([]*planned, error) {
 	var errs []string
 	for _, ci := range f.Instances() {
 		p := &planned{id: ci.ID(), block: ci.Block, name: ci.Name}
+		if !companion.ValidInstanceName(ci.Name) {
+			errs = append(errs, fmt.Sprintf("%s: instance names are lower case a-z, 0-9, '.', '_' and '-' (%q would do)", p.id, companion.LegacyName(ci.Name)))
+			continue
+		}
 		if ci.Service {
 			sb := f.Services[ci.Block]
 			p.service = &sb

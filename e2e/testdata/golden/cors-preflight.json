@@ -1,0 +1,7 @@
+{
+  "status": 204,
+  "header": {
+    "Access-Control-Allow-Credentials": "true",
+    "Access-Control-Allow-Origin": "https://www.example.com"
+  }
+}

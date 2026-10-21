@@ -44,3 +44,7 @@ src/data/logs/**
 src/data/microblog/**
 src/data/trips/**
 .inbox/**
+
+# The old installation the migration's end-to-end test moves over.
+!e2e/testdata/legacy/.env
+!e2e/testdata/legacy/companion.db

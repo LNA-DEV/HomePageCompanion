@@ -28,7 +28,7 @@ func init() {
 			{Name: "routing", Needs: geo.RoutingV1, Optional: true},
 			{Name: "media", Needs: media.ImageV1, Optional: true},
 		},
-		Start:   migrate,
+		Migrate: migrate,
 		Routes:  routes,
 		Aliases: []string{"/api/trips"},
 		Import:  importLegacy,

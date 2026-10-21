@@ -31,7 +31,7 @@ func init() {
 		},
 		Subscribes: []string{social.EventStatsUpdated},
 		OnEvent:    onEvent,
-		Start:      migrate,
+		Migrate:    migrate,
 		Routes:     routes,
 		Aliases:    []string{"/api/microblog"},
 		Import:     importLegacy,

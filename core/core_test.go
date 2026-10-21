@@ -141,6 +141,7 @@ func TestPlanErrors(t *testing.T) {
 		"invalid config":   "modules:\n  fake.publisher: { instances: { main: {} } }\n  t.consumer:\n    instances:\n      a: { greeting: invalid, target: fake.publisher:main }\n",
 		"single slot, two": "modules:\n  fake.publisher: { instances: { main: {}, b: {} } }\n  t.consumer:\n    instances:\n      a: { target: [fake.publisher:main, fake.publisher:b] }\n",
 		"aliases collide":  "modules:\n  fake.publisher: { instances: { main: {} } }\n  t.consumer: { instances: { a: { target: fake.publisher:main } } }\n  t.clash: {}\n",
+		"instance name":    "modules:\n  fake.publisher: { instances: { Photo RSS: {} } }\n",
 	} {
 		t.Run(name, func(t *testing.T) {
 			dir := t.TempDir()
@@ -156,6 +157,9 @@ func TestPlanErrors(t *testing.T) {
 				t.Fatal("started")
 			}
 			t.Log(err)
+			if name == "instance name" && !strings.Contains(err.Error(), `"photo-rss" would do`) {
+				t.Errorf("no suggestion: %v", err)
+			}
 		})
 	}
 }

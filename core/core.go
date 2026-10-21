@@ -136,44 +136,10 @@ func (c *Core) envFiles() []string {
 // Start reads the config and starts every instance. On error, whatever
 // started is stopped again.
 func (c *Core) Start(ctx context.Context) error {
-	if err := os.MkdirAll(c.opts.DataDir, 0o755); err != nil {
-		return err
-	}
-	f, raw, err := conf.Load(c.opts.ConfigPath, c.envFiles()...)
+	next, err := c.provision(ctx)
 	if err != nil {
 		return err
 	}
-	ps, err := c.plan(f)
-	if err != nil {
-		return err
-	}
-	c.conf.Store(f)
-	c.confRaw = raw
-
-	next := map[string]*instance{}
-	for _, p := range ps {
-		in, err := c.create(p, next)
-		if err != nil {
-			c.stopAll(ctx, next, nil)
-			return err
-		}
-		next[p.id] = in
-		if err := c.afterStorage(in); err != nil {
-			c.stopAll(ctx, next, nil)
-			return err
-		}
-	}
-
-	c.mu.Lock()
-	c.instances = next
-	c.order = idsOf(ps)
-	for _, p := range ps {
-		if _, ok := c.blocks[p.block]; !ok {
-			c.blocks[p.block] = &block{info: p.info, mc: next[p.id].ctx.modCtx}
-		}
-	}
-	c.mu.Unlock()
-
 	for _, id := range c.order {
 		if err := c.startInstance(next[id]); err != nil {
 			c.stopAll(ctx, next, nil)
@@ -192,6 +158,83 @@ func (c *Core) Start(ctx context.Context) error {
 	}
 	c.log.Printf("started %d instance(s) of %d building block(s)", len(next), len(c.blocks))
 	return nil
+}
+
+// Prepare provisions every instance and runs the modules' Migrate, and
+// nothing else: no Start, no jobs, no events, no HTTP. The instances count
+// as running, so ModuleContext.Instances lists them. For "companion
+// migrate" and tools that work on the modules' data; Stop ends it.
+func (c *Core) Prepare(ctx context.Context) error {
+	next, err := c.provision(ctx)
+	if err != nil {
+		return err
+	}
+	c.mu.Lock()
+	for _, in := range next {
+		in.running = true
+	}
+	var blocks []*block
+	for _, b := range c.blocks {
+		blocks = append(blocks, b)
+	}
+	c.mu.Unlock()
+	sort.Slice(blocks, func(i, j int) bool {
+		if blocks[i].info.Order != blocks[j].info.Order {
+			return blocks[i].info.Order < blocks[j].info.Order
+		}
+		return blocks[i].info.ID < blocks[j].info.ID
+	})
+	for _, b := range blocks {
+		if b.info.Migrate != nil {
+			if err := safely(func() error { return b.info.Migrate(b.mc) }); err != nil {
+				c.stopAll(ctx, next, nil)
+				return fmt.Errorf("%s: migrate: %w", b.info.ID, err)
+			}
+		}
+	}
+	return nil
+}
+
+// provision reads the config and builds every instance, storage first.
+func (c *Core) provision(ctx context.Context) (map[string]*instance, error) {
+	if err := os.MkdirAll(c.opts.DataDir, 0o755); err != nil {
+		return nil, err
+	}
+	f, raw, err := conf.Load(c.opts.ConfigPath, c.envFiles()...)
+	if err != nil {
+		return nil, err
+	}
+	ps, err := c.plan(f)
+	if err != nil {
+		return nil, err
+	}
+	c.conf.Store(f)
+	c.confRaw = raw
+
+	next := map[string]*instance{}
+	for _, p := range ps {
+		in, err := c.create(p, next)
+		if err != nil {
+			c.stopAll(ctx, next, nil)
+			return nil, err
+		}
+		next[p.id] = in
+		if err := c.afterStorage(in); err != nil {
+			c.stopAll(ctx, next, nil)
+			return nil, err
+		}
+	}
+
+	c.mu.Lock()
+	c.instances = next
+	c.order = idsOf(ps)
+	for _, p := range ps {
+		if _, ok := c.blocks[p.block]; !ok {
+			c.blocks[p.block] = &block{info: p.info, mc: next[p.id].ctx.modCtx}
+		}
+	}
+	c.mu.Unlock()
+	return next, nil
 }
 
 // create builds, provisions and validates one instance. Its slots resolve
@@ -351,6 +394,11 @@ func (c *Core) startBlocks() error {
 		return todo[i].info.ID < todo[j].info.ID
 	})
 	for _, b := range todo {
+		if b.info.Migrate != nil {
+			if err := safely(func() error { return b.info.Migrate(b.mc) }); err != nil {
+				return fmt.Errorf("%s: migrate: %w", b.info.ID, err)
+			}
+		}
 		if b.info.Start != nil {
 			if err := safely(func() error { return b.info.Start(b.mc) }); err != nil {
 				return fmt.Errorf("%s: start: %w", b.info.ID, err)

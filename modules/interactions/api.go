@@ -2,8 +2,10 @@ package interactions
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"runtime/debug"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -42,30 +44,49 @@ func routes(mc companion.ModuleContext, r *companion.Router) {
 
 	// The likes of one item per platform, website likes included as
 	// "native"; target_name is "all" or one target.
+	// The website's like counts, as the old companion answered: one entry
+	// per platform whose likes were fetched at least once and the website's
+	// own ("native"), sorted by platform and target name.
 	pub.GET("/post/:target_name/:item_id", func(c *gin.Context) {
 		itemID, target := c.Param("item_id"), c.Param("target_name")
-		var rows []Tracked
-		q := mc.DB().Where("item_id = ?", itemID).Order("id")
-		if target != "all" && target != "native" {
-			q = q.Where("target = ? OR target LIKE ?", target, "%:"+target)
+		type entry struct {
+			LikesResponse
+			name string
 		}
-		out := []LikesResponse{}
+		var entries []entry
 		if target != "native" {
+			var rows []Tracked
+			q := mc.DB().Where("item_id = ? AND likes_at IS NOT NULL", itemID)
+			if target != "all" {
+				q = q.Where("target = ? OR target LIKE ?", target, "%:"+companion.LegacyName(target))
+			}
 			if err := q.Find(&rows).Error; err != nil {
 				c.Data(http.StatusInternalServerError, "application/text", []byte(err.Error()))
 				return
 			}
 			for _, t := range rows {
-				out = append(out, LikesResponse{Platform: t.Platform, Likes: t.Likes})
+				_, name := companion.SplitInstanceID(t.Target)
+				entries = append(entries, entry{LikesResponse{Platform: t.Platform, Likes: t.Likes}, name})
 			}
 		}
 		if target == "all" || target == "native" {
 			var nc NativeCount
 			if mc.DB().Where("item_id = ?", itemID).Limit(1).Find(&nc).RowsAffected > 0 {
-				out = append(out, LikesResponse{Platform: "native", Likes: nc.Likes})
+				entries = append(entries, entry{LikesResponse{Platform: "native", Likes: nc.Likes}, "native"})
 			}
 		}
-		c.JSON(http.StatusOK, out)
+		sort.Slice(entries, func(i, j int) bool {
+			if entries[i].Platform != entries[j].Platform {
+				return entries[i].Platform < entries[j].Platform
+			}
+			return entries[i].name < entries[j].name
+		})
+		out := []LikesResponse{}
+		for _, e := range entries {
+			out = append(out, e.LikesResponse)
+		}
+		body, _ := json.Marshal(out)
+		c.Data(http.StatusOK, "application/json", body)
 	})
 
 	pub.POST("/native/:item_id/like", func(c *gin.Context) {
