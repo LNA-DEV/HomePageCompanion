@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
-	import { login } from '$lib/stores/auth';
+	import { login, loadManifest } from '$lib/shell/session';
+	import { installClientLogger } from '$lib/clientLogger';
 
 	let apiKey = $state('');
 	let error = $state('');
@@ -15,9 +16,11 @@
 			const success = await login(apiKey);
 
 			if (success) {
-				goto('/dashboard');
+				installClientLogger();
+				await loadManifest().catch(() => undefined);
+				goto('/');
 			} else {
-				error = 'Invalid API key';
+				error = 'Invalid admin key';
 			}
 		} catch (err) {
 			error = 'Failed to authenticate. Please check your connection.';
@@ -36,13 +39,13 @@
 
 		<form onsubmit={handleSubmit}>
 			<div class="mb-6">
-				<label for="apiKey" class="label">API Key</label>
+				<label for="apiKey" class="label">Admin key</label>
 				<input
 					id="apiKey"
 					type="password"
 					bind:value={apiKey}
 					class="input"
-					placeholder="Enter your API key"
+					placeholder="Enter the admin key"
 					required
 					disabled={loading}
 				/>

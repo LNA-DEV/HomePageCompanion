@@ -75,10 +75,10 @@ func (Post) TableName() string { return "autoupload_posts" }
 
 // LikeDay is a publication's like count on one day, for the history.
 type LikeDay struct {
-	ItemID string `gorm:"primaryKey"`
-	Target string `gorm:"primaryKey"`
-	Day    string `gorm:"primaryKey"` // YYYY-MM-DD
-	Likes  int
+	ItemID string `gorm:"primaryKey" json:"itemId"`
+	Target string `gorm:"primaryKey" json:"target"`
+	Day    string `gorm:"primaryKey" json:"day"` // YYYY-MM-DD
+	Likes  int    `json:"likes"`
 }
 
 func (LikeDay) TableName() string { return "autoupload_like_days" }

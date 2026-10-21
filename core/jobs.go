@@ -15,13 +15,13 @@ import (
 
 // jobRun is one run of a job, kept for the UI and "run now" results.
 type jobRun struct {
-	ID         uint      `gorm:"primaryKey"`
-	Job        string    `gorm:"index"` // "<owner>/<name>"
-	Trigger    string    // schedule | manual
-	StartedAt  time.Time `gorm:"index"`
-	FinishedAt *time.Time
-	OK         bool
-	Error      string
+	ID         uint       `gorm:"primaryKey" json:"id"`
+	Job        string     `gorm:"index" json:"job"` // "<owner>/<name>"
+	Trigger    string     `json:"trigger"`          // schedule | manual
+	StartedAt  time.Time  `gorm:"index" json:"startedAt"`
+	FinishedAt *time.Time `json:"finishedAt,omitempty"`
+	OK         bool       `json:"ok"`
+	Error      string     `json:"error,omitempty"`
 }
 
 func (jobRun) TableName() string { return "core_job_runs" }

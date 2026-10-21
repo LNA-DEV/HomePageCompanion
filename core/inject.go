@@ -248,6 +248,41 @@ type Field struct {
 	Help   string  `json:"help,omitempty"`
 }
 
+// configFields are the json-tagged fields of a config struct; embedded
+// structs contribute theirs, as encoding/json flattens them.
+func configFields(t reflect.Type) []Field {
+	var out []Field
+	durationType := reflect.TypeFor[companion.Duration]()
+	for i := 0; i < t.NumField(); i++ {
+		f := t.Field(i)
+		tag := f.Tag.Get("companion")
+		if f.Anonymous && f.Type.Kind() == reflect.Struct && f.Tag.Get("json") == "" {
+			out = append(out, configFields(f.Type)...)
+			continue
+		}
+		if !f.IsExported() || f.Tag.Get("json") == "" || f.Tag.Get("json") == "-" || strings.Contains(tag, "slot") {
+			continue
+		}
+		fd := Field{Name: jsonName(f), Secret: hasTagPart(tag, "secret"), Help: f.Tag.Get("help")}
+		switch {
+		case f.Type == durationType:
+			fd.Type = "duration"
+		case f.Type.Kind() == reflect.String:
+			fd.Type = "string"
+		case f.Type.Kind() == reflect.Bool:
+			fd.Type = "boolean"
+		case f.Type.Kind() >= reflect.Int && f.Type.Kind() <= reflect.Float64:
+			fd.Type = "number"
+		case f.Type.Kind() == reflect.Slice:
+			fd.Type = "list"
+		default:
+			fd.Type = "object"
+		}
+		out = append(out, fd)
+	}
+	return out
+}
+
 // schemaOf lists the config fields of an instance type, slots included.
 func schemaOf(info companion.Info) []Field {
 	var out []Field
@@ -269,30 +304,10 @@ func schemaOf(info companion.Info) []Field {
 	if t == nil || t.Kind() != reflect.Struct {
 		return out
 	}
-	durationType := reflect.TypeFor[companion.Duration]()
-	for i := 0; i < t.NumField(); i++ {
-		f := t.Field(i)
-		tag := f.Tag.Get("companion")
-		if !f.IsExported() || f.Tag.Get("json") == "-" || strings.Contains(tag, "slot") {
-			continue
-		}
-		fd := Field{Name: jsonName(f), Secret: hasTagPart(tag, "secret"), Help: f.Tag.Get("help")}
-		switch {
-		case f.Type == durationType:
-			fd.Type = "duration"
-		case f.Type.Kind() == reflect.String:
-			fd.Type = "string"
-		case f.Type.Kind() == reflect.Bool:
-			fd.Type = "boolean"
-		case f.Type.Kind() >= reflect.Int && f.Type.Kind() <= reflect.Float64:
-			fd.Type = "number"
-		case f.Type.Kind() == reflect.Slice:
-			fd.Type = "list"
-		default:
-			fd.Type = "object"
-		}
-		out = append(out, fd)
-	}
+	out = append(out, configFields(t)...)
 	sort.SliceStable(out, func(a, b int) bool { return out[a].Slot != nil && out[b].Slot == nil })
 	return out
 }
+
+// SchemaOf is the config schema of a building block; for tests and tools.
+func SchemaOf(info companion.Info) []Field { return schemaOf(info) }

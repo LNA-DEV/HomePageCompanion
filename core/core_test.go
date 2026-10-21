@@ -264,7 +264,7 @@ func TestJobs(t *testing.T) {
 	if !strings.Contains(w.Body.String(), "t.consumer:a/count") {
 		t.Fatalf("jobs list: %s", w.Body)
 	}
-	if w := h.Admin("POST", "/api/core/jobs/run", map[string]any{"key": "t.consumer:a/count", "wait": true}); w.Code != http.StatusAccepted || !strings.Contains(w.Body.String(), `"OK":true`) {
+	if w := h.Admin("POST", "/api/core/jobs/run", map[string]any{"key": "t.consumer:a/count", "wait": true}); w.Code != http.StatusAccepted || !strings.Contains(w.Body.String(), `"ok":true`) {
 		t.Fatalf("run now: %d %s", w.Code, w.Body)
 	}
 }
@@ -472,5 +472,29 @@ func TestMetrics(t *testing.T) {
 	}
 	if w := h.Public("GET", "/metrics", nil); w.Code != http.StatusUnauthorized {
 		t.Fatalf("metrics are public: %d", w.Code)
+	}
+}
+
+func TestSchemaFlattensEmbeddedStructsAndSkipsUntagged(t *testing.T) {
+	type inner struct {
+		Caption string `json:"caption"`
+	}
+	type cfg struct {
+		inner
+		Cron     string `json:"cron"`
+		Token    string `json:"token" companion:"secret"`
+		Internal string
+		Hidden   string `json:"-"`
+	}
+	fields := core.SchemaOf(companion.Info{ID: "schema-probe", New: func() companion.Instance { return new(cfg) }})
+	var names []string
+	for _, f := range fields {
+		names = append(names, f.Name)
+		if f.Name == "token" && !f.Secret {
+			t.Error("token is not secret")
+		}
+	}
+	if strings.Join(names, ",") != "caption,cron,token" {
+		t.Fatalf("fields %v", names)
 	}
 }

@@ -1,4 +1,8 @@
-import { api } from './api';
+// Sends the admin UI's console warnings and errors to the core, which keeps
+// them per browser under data/logs/clients/. The session cookie
+// authenticates the requests, the beacon on page hide included.
+import { ApiError } from '@companion/ui';
+import { core } from './shell/core';
 
 export interface ClientLogEntry {
 	level: 'warn' | 'error';
@@ -79,10 +83,10 @@ async function flush() {
 	if (buffer.length === 0) return;
 	const batch = buffer.splice(0, buffer.length);
 	try {
-		await api.sendClientLogs(getClientId(), batch);
+		await core.post('client-logs', { clientId: getClientId(), entries: batch });
 	} catch (err) {
 		// 401 means we're not authenticated — drop the batch (don't loop).
-		if (err instanceof Error && err.message === 'Unauthorized') return;
+		if (err instanceof ApiError && err.status === 401) return;
 		// Network or transient — requeue at the front, capped.
 		buffer = [...batch, ...buffer].slice(0, BUFFER_LIMIT);
 	}
@@ -93,11 +97,9 @@ function flushBeacon() {
 	if (typeof navigator === 'undefined' || typeof navigator.sendBeacon !== 'function') {
 		return;
 	}
-	const apiKey = api.loadApiKey();
-	if (!apiKey) return;
 	const batch = buffer.splice(0, buffer.length);
 	const payload = JSON.stringify({ clientId: getClientId(), entries: batch });
-	const url = `/api/admin/client-logs?token=${encodeURIComponent(apiKey)}`;
+	const url = core.url('client-logs');
 	try {
 		navigator.sendBeacon(url, new Blob([payload], { type: 'application/json' }));
 	} catch {

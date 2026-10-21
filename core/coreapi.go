@@ -239,6 +239,9 @@ func (c *Core) getLogs(g *gin.Context) {
 		g.JSON(http.StatusInternalServerError, gin.H{"error": "failed to list log files"})
 		return
 	}
+	if files == nil {
+		files = []string{}
+	}
 	file := g.Query("file")
 	if file == "" && len(files) > 0 {
 		file = files[0]

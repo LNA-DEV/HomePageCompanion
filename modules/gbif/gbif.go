@@ -66,10 +66,10 @@ type Proxy struct {
 	// applies on top.
 	CacheMB int `json:"cacheMB"`
 
-	Dir      string
-	CapBytes int64
-	Client   *http.Client
-	Now      func() time.Time
+	Dir      string           `json:"-"`
+	CapBytes int64            `json:"-"`
+	Client   *http.Client     `json:"-"`
+	Now      func() time.Time `json:"-"`
 
 	log   *log.Logger
 	group singleflight.Group
