@@ -32,27 +32,6 @@ jobs:
       - name: every module builds on its own
         run: GOWORK=off scripts/go-each.sh build ./...
 
-  # The pre-module companion, until it is removed.
-  go-legacy:
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: src
-    env:
-      GOWORK: 'off'
-    steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-go@v5
-        with:
-          go-version-file: src/go.mod
-          cache-dependency-path: src/go.sum
-      - name: go vet
-        run: go vet ./...
-      - name: go test
-        run: go test -race ./...
-      - name: every package has tests
-        run: ../scripts/check-tests.sh .notests
-
   web:
     runs-on: ubuntu-latest
     defaults:
@@ -161,7 +140,7 @@ jobs:
   # every push so a broken image is red too; pushed to GHCR from main and
   # version tags only.
   image:
-    needs: [go, go-legacy, web, integration, ui, services]
+    needs: [go, web, integration, ui, services]
     runs-on: ubuntu-latest
     permissions:
       contents: read

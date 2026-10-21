@@ -23,10 +23,11 @@ import (
 )
 
 // The gate "the website does not notice" (docs/concepts/modular-architecture.md
-// §6): the old companion's answers to every request the website makes are
-// recorded once from testdata/legacy (scripts/record-golden.sh); the test
-// migrates the same installation and asks the new companion.
-var record = flag.String("record", "", "path of the old companion's binary: record testdata/golden from it")
+// §6): the old companion's answers to every request the website makes were
+// recorded from testdata/legacy before it was removed; the test migrates the
+// same installation and asks the new companion. -record records them again
+// from a companion's binary, when an answer changes on purpose.
+var record = flag.String("record", "", "path of a companion's binary: record testdata/golden from it")
 
 // request is one call the website makes.
 type request struct {
@@ -142,7 +143,7 @@ func TestWebsiteUnchanged(t *testing.T) {
 		}
 		raw, err := os.ReadFile(file)
 		if err != nil {
-			t.Fatalf("%s: %v (record with scripts/record-golden.sh)", rq.name, err)
+			t.Fatalf("%s: %v (record with -record <binary>)", rq.name, err)
 		}
 		var want golden
 		if err := json.Unmarshal(raw, &want); err != nil {

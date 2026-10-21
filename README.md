@@ -1,285 +1,248 @@
 # HomePageCompanion
 
-A self-hosted bridge between your RSS feeds and your social-media accounts —
-Pixelfed, Bluesky, Instagram, and Mastodon — with a built-in admin dashboard,
-federated microblog, and engagement tracking.
+A self-hosted bridge between your website's feeds and your social-media
+accounts — Mastodon, Pixelfed, Bluesky, Instagram and Threads — with an admin
+dashboard, a federated microblog, engagement tracking and the website's maps.
 
-HomePageCompanion ingests RSS feeds, routes new items to configured social
-platforms on a schedule, and tracks the resulting engagement (likes,
-webmentions, remote comments). It also hosts a small federated microblog and
-collects browser-side telemetry, all driven from a single SvelteKit admin UI.
+The companion reads the website's RSS feeds, posts new items to the
+configured networks on a schedule, and collects what comes back (likes,
+replies, webmentions). It is built from modules: a small core, building
+blocks compiled into one program, and services in containers of their own
+in any language. Design: [`docs/concepts/modular-architecture.md`](docs/concepts/modular-architecture.md).
 
 ## Features
 
-- Multi-source RSS ingestion (image and text item types).
-- Per-connection scheduled autoupload to Pixelfed / Bluesky / Instagram /
-  Mastodon / Threads, with cron schedules, custom captions, EXIF appending,
-  and copyright attribution. People in a photo are named in the post and,
-  with their consent, tagged. See *People in photos* below.
-- Federated microblog: write posts, attach images, set content warnings, fetch
-  comments and likes back from remote servers.
-- Engagement tracking: native likes (deduplicated by hashed IP), incoming
-  webmentions, and remote interactions from federated servers.
-- VAPID web-push notifications, including admin broadcast.
-- Instagram and Threads tokens refreshed weekly, stored encrypted, so they
-  never hit Meta's 60-day expiry. See *Token refresh* below.
-- Admin dashboard (SvelteKit) with stats, logs, and connection health.
-- Client-log ingestion endpoint for browser-side telemetry.
-- Maps for the website without third parties: a self-hosted OpenStreetMap
-  vector basemap (copied monthly into S3), trip routes computed once per leg,
-  and a caching proxy for GBIF's occurrence tiles. See *Maps* below.
+- **Autoposting**: one connection per feed and network, with a cron
+  schedule, rotation or announcing, captions, alt text, EXIF and copyright,
+  a preview of the exact post, and a page per item with its state on every
+  network. People in a photo are named and, with their consent, tagged
+  (*People in photos* below).
+- **Networks**: Mastodon, Pixelfed, Bluesky, Instagram, Threads compiled in;
+  Lemmy as a service (`services/lemmy`). Mastodon, Pixelfed, Instagram and
+  Threads accounts connect with OAuth on their settings page, or take a
+  token from `.env`; Instagram and Threads tokens are refreshed every week.
+- **Microblog**: posts with images and content warnings to several networks,
+  their replies and likes fetched back.
+- **Engagement**: website likes (deduplicated by a salted IP hash),
+  webmentions, remote interactions; web-push notifications.
+- **Maps** without third parties: a self-hosted OpenStreetMap basemap, trip
+  routes computed once per leg, a caching proxy for GBIF's tiles.
+- **Admin UI**: a shell whose pages, widgets and settings come from the
+  building blocks; problems, jobs, logs, backups, metrics.
+- **Operations**: one container, SQLite or another database module, blobs on
+  disk or in S3, encrypted secrets, backups and restore, a migration from the
+  old installation, Prometheus metrics at `/metrics`.
 
-## Architecture
+## How it is built
 
-- **Backend** — Go 1.25 with [Gin](https://github.com/gin-gonic/gin), SQLite
-  via GORM, and `robfig/cron` for scheduled tasks. Entry point:
-  [`src/main.go`](src/main.go). Listens on `:8080`.
-- **Frontend** — SvelteKit 2 + Svelte 5 + Tailwind, built with the static
-  adapter and served by Nginx in production. Lives in [`web/`](web/).
-- **Orchestration** — `docker compose` runs two services:
-  - `companion` — the Go binary, internal only.
-  - `web` — Nginx serving the built SvelteKit app on host port `8080`, with
-    API requests reverse-proxied to `companion`.
+| Part | What it is |
+|---|---|
+| `core/` | config, building blocks and their connections, gateway, jobs, events, secrets, backups, the API for services, the egress proxy |
+| `companion/` | the SDK of the building blocks: `companion.Info`, slots, `Context` |
+| `capability/` | the capabilities as Go interfaces (`social.publisher/v1`, `feed.source/v1`, `media.image/v1`, …) and their generated adapters |
+| `modules/<name>/` | building blocks compiled into the companion, each a Go module of its own |
+| `services/<name>/` | building blocks in their own container (`lemmy`, Python) |
+| `service/`, `sdk/python/` | the SDKs that run a building block as a service |
+| `cmd/hpc/` | the tool: `build`, `apply`, `dev`, `test`, `gen` |
+| `web/` | the admin shell (SvelteKit) and `@companion/ui` for module UIs |
 
-The host only exposes `web` on `:8080`; the Go backend is never published
-directly.
+`build.yaml` says what is compiled in, `companion.yaml` what runs and how it
+is connected: a slot of one block names an instance of another
+(`target: mastodon:main`), whether that is compiled in or a service.
 
 ## Quick start (Docker)
 
 ```bash
-git clone <repo-url> HomePageCompanion
+git clone https://github.com/LNA-DEV/HomePageCompanion
 cd HomePageCompanion
-
-# 1. Fill in credentials
-cp .env.example .env
-$EDITOR .env
-
-# 2. Configure feeds, targets, and connections
-cp src/data/config.yaml.example src/data/config.yaml
-$EDITOR src/data/config.yaml
-
-# 3. Bring it up
+mkdir -p data
+cp .env.example data/.env                      # the admin key, the accounts' tokens
+cp companion.yaml.example data/companion.yaml  # feeds, networks, connections
+$EDITOR data/.env data/companion.yaml
 docker compose up -d
 ```
 
-Then open <http://localhost:8080>.
+Then open <http://localhost:8080> and log in with `ADMIN_API_KEY`. The
+published image is `ghcr.io/lna-dev/homepagecompanion` (see
+`docker-compose.yml`). `docker compose exec companion /app/companion config check`
+checks every connection of `companion.yaml`; changes to it are picked up
+without a restart.
 
-To check backend health:
-
-```bash
-docker compose exec companion curl -f http://localhost:8080/health
-```
+**Moving over an old installation** (its `data/config.yaml`, `companion.db`,
+`.env`): `docker compose run --rm companion migrate --check` shows what
+would happen, `docker compose run --rm companion migrate` writes
+`companion.yaml` and moves every table into its module's area. The website
+sees the same answers as before.
 
 ## Configuration
 
-### Environment variables
+`companion.yaml` ([`companion.yaml.example`](companion.yaml.example)) has
+three parts:
 
-Defined in [`.env.example`](.env.example). Values present in the OS
-environment win over the file. They can be referenced from `config.yaml`
-using `${VAR}` or `${VAR:-fallback}` syntax.
+- `core`: `domain` (CORS), `adminKey`, `publicUrl`, `database`, `blobs`,
+  `backups`, `listen`, `servicesListen`.
+- `modules`: one block per compiled-in module, with `config:` (the instance
+  `default`) or named `instances:`.
+- `services`: building blocks in containers, with `from:` (`oci://…`,
+  `git+https://…@ref`, `path:<dir>`), their `grants` and `instances`.
+
+`${NAME}` and `${NAME:-default}` are read from the environment and
+`data/.env` ([`.env.example`](.env.example)); the environment wins.
 
 | Variable | Purpose |
 | --- | --- |
-| `ADMIN_API_KEY` | API key for all `/api/admin/*` endpoints and the SvelteKit admin UI. **Required.** |
-| `IP_HASH_SALT` | Salt used when hashing IPs to deduplicate native likes. |
-| `PIXELFED_PAT` | Pixelfed personal access token. |
-| `PIXELFED_INSTANCE` | Pixelfed instance URL (e.g. `https://pixelfed.de`). |
-| `BLUESKY_USERNAME` | Bluesky handle. |
-| `BLUESKY_PAT` | Bluesky app password. |
-| `INSTAGRAM_ACCESS_TOKEN` | Instagram Graph API access token (long-lived; refreshed automatically, see *Token refresh*). |
-| `INSTAGRAM_ACCOUNT_ID` | Instagram Graph API account ID. |
-| `MASTODON_INSTANCE` | Mastodon instance URL. |
-| `MASTODON_PAT` | Mastodon access token (used by autouploader and microblog). |
-| `THREADS_ACCESS_TOKEN` | Threads Graph API access token (long-lived; refreshed automatically, see *Token refresh*). |
-| `THREADS_USER_ID` | Threads user ID. |
-| `TOKEN_ENCRYPTION_KEY` | 32 bytes, base64 (`openssl rand -base64 32`). Encrypts the refreshed Instagram/Threads tokens in `companion.db`. Without it they are not refreshed. |
-| `WEBPUSH_SUBSCRIBER_MAIL` | Contact string (usually `mailto:you@example.com`) sent to web-push providers. |
-| `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` | Credentials for the object storage bucket (`storage.bucketUrl`). |
+| `ADMIN_API_KEY` | the admin login, and `Authorization: ApiKey <key>` for scripts |
+| `COMPANION_DOMAIN` | the website's domain, for CORS |
+| `COMPANION_SECRET_KEY` | 32 bytes, base64 (`openssl rand -base64 32`): encrypts the secret store (refreshed and connected tokens, the VAPID key). Without it the core generates `data/secret.key`; keep it with the backups |
+| `TRUSTED_PROXIES` | the reverse proxies whose `X-Forwarded-For` counts (IPs, CIDRs, `none`); unset: the private networks |
+| `IP_HASH_SALT` | the salt of website likes' IP hashes |
+| `WEBPUSH_SUBSCRIBER_MAIL` | the contact sent to web-push providers |
+| `MASTODON_*`, `PIXELFED_*`, `BLUESKY_*`, `INSTAGRAM_*`, `THREADS_*` | the accounts, unless connected on their settings page; Bluesky takes an app password |
+| `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` | the S3 bucket of `blob.s3` |
 
-### YAML config
+## Operating
 
-Edit `src/data/config.yaml` (template at
-[`src/data/config.yaml.example`](src/data/config.yaml.example)).
-Top-level sections:
+```bash
+docker compose exec companion /app/companion backup -o /app/data/backup.tar.gz
+docker compose stop companion && docker compose run --rm companion restore /app/data/backup.tar.gz
+docker compose exec companion /app/companion secrets rotate --new "$(openssl rand -base64 32)"
+```
 
-- `security` — `apiKey`, `ipHashSalt`, public `domain`.
-- `datasources.rss[]` — RSS sources, each with `name`, `url`, and
-  `itemType` (`image` or `text`).
-- `targets[]` — social accounts, each with `platform` and credentials sourced
-  from env vars, plus optional per-platform image sizing overrides and
-  `maxCaptionLength` for an instance that allows longer captions than the
-  platform default (Mastodon: 500).
-- `connections[]` — datasource → target routes, including caption template,
-  cron schedule, routing tags, EXIF / copyright flags, `includeAltText`, and
-  the names and tags of people in a photo (`tagModels`, `modelsPrefix`,
-  `modelsAnd`).
-- `microblog.publishTo[]` — list of target platforms that microblog posts
-  publish to.
-- `webpush.subscriberMail` — push-provider contact string.
-- `security.extraOrigins[]` — further CORS origins, compared exactly (the
-  site's onion address).
-- `storage` — the object store the modules share: `bucketUrl` and the
-  companion's folder in it, `prefix` (`home-page-companion`). Every module
-  keeps its objects under `<prefix>/<module>/` — the basemap under
-  `home-page-companion/maps/basemap/` — and nothing outside the prefix is
-  ever touched.
-- `basemap`, `routing`, `gbif` — the maps; see *Maps* below and the template.
+Backups also run on `core.backups.schedule` into the blob store. The admin
+UI lists them, the runs of every job, the logs and the open problems;
+`/metrics` (admin only) has the calls, errors and latency per capability and
+instance.
+
+## Services
+
+A service is a building block in its own container, in any language:
+[`docs/services/protocol.md`](docs/services/protocol.md). `hpc apply` starts
+the services of `companion.yaml` next to the companion with Docker Compose,
+after showing what each one offers, asks for and gets:
+
+```yaml
+services:
+  lemmy:
+    from: oci://ghcr.io/lna-dev/companion-lemmy:latest
+    grants: { egress: [lemmy.world] }
+    instances:
+      main: { server: https://lemmy.world, username: me, password: "${LEMMY_PASSWORD}", community: photography }
+```
+
+```bash
+go run ./cmd/hpc apply -c data/companion.yaml   # writes compose.generated.yml and data/companion.lock
+```
+
+Every service runs unprivileged in a network of its own; it reaches the
+internet only through the companion's egress proxy, and only the hosts of
+its grant. Its pages appear in the admin UI in a sandboxed frame.
 
 ## Maps
 
-The website's maps (the trip map, the dex's detailed map, route maps in posts)
-make no request to anyone but this companion. Design and reasoning live in the
-Home-Page repository, `docs/concepts/self-hosted-maps.md`.
+The website's maps make no request to anyone but this companion (design:
+the Home-Page repository, `docs/concepts/self-hosted-maps.md`).
 
-**Basemap** (`basemap/`). A [Protomaps](https://docs.protomaps.com/) planet
-build — one PMTiles file of OpenStreetMap vector tiles, ~139 GB, zoom 0–15 — is
-copied from the daily builds into the storage bucket
-(`<storage.prefix>/maps/basemap/<YYYYMMDD>.pmtiles`) and served through
-[go-pmtiles](https://github.com/protomaps/go-pmtiles):
-
-| Route | |
-| --- | --- |
-| `GET /api/tiles/basemap.json` | TileJSON of the active build (`max-age=3600`) |
-| `GET /api/tiles/basemap/:version/:z/:x/:y.mvt` | a tile of the active or a retained build (`immutable`) |
-| `GET /api/admin/basemap` | status, progress of a running copy, the stored builds |
-| `POST /api/admin/basemap/update` | start an update now |
-| `POST /api/admin/basemap/cleanup` | delete expired builds and stale uploads |
-
-The update job (`basemap.schedule`, monthly) finds the newest build of the
-last week, refuses it before copying if it is not schema `basemap.schemaMajor`
-at zoom 15, then copies it part by part — a ranged GET into an S3 multipart
-`UploadPart` — and records every finished part, so a crash or a restart
-resumes at the next missing part (`ResumeInterrupted` at startup). It then
-compares size and header with the source, reads the TileJSON and sample tiles
-through the serving path, and switches over. The previous build stays
-servable for `retainDays`, because browsers cache the TileJSON for an hour and
-the tiles under a build's URL forever. The *Basemap* page of the admin UI shows
-all of it. Only keys under the module's prefix are ever written or deleted.
-
-**Trip routes** (`routing/`). When a trip is saved, every car and train leg
-without a stored track is queued; a worker asks OSRM (car) or Transitous (rail,
-falling back to the road) at most once per second, simplifies the line and
-stores it keyed by mode and points. The public trip payload carries it as
-`transportIn.geometry`. Flights stay straight. `POST /api/admin/routes/backfill`
-queues missing and failed legs (also done at startup); the trip editor shows
-each leg's status and can recompute one.
-
-**GBIF** (`gbif/`). `GET /api/tiles/gbif/:taxonKey/:z/:x/:y.png` proxies
-GBIF's density tiles with the one parameter set the site uses, caching them
-under `data/cache/gbif` (fresh for GBIF's `max-age`, then revalidated with the
-ETag; served stale while GBIF is down; capped at `gbif.cacheMB`).
-
-The S3 store has an integration test that is skipped unless a bucket is named:
-
-```bash
-cd src
-BASEMAP_S3_TEST_URL='s3://<bucket>?endpoint=https://nbg1.your-objectstorage.com&region=nbg1' \
-AWS_ACCESS_KEY_ID=… AWS_SECRET_ACCESS_KEY=… go test ./basemap -run S3Store
-```
+- **Basemap** (`modules/basemap`): a [Protomaps](https://docs.protomaps.com/)
+  planet build, ~139 GB of OpenStreetMap vector tiles, copied monthly into
+  the blob store part by part (a restart resumes at the next missing part),
+  checked, and served at `GET /api/tiles/basemap.json` and
+  `GET /api/tiles/basemap/:version/:z/:x/:y.mvt`. The previous build stays
+  servable for `retainDays`. Status, update and cleanup: its page in the
+  admin UI, or `/api/b/basemap`.
+- **Trip routes** (`modules/routing`, `modules/trips`): every car and train
+  leg of a trip is routed once with OSRM or Transitous, at most one request a
+  second, and stored; `POST /api/b/trips/routes/backfill` queues missing ones.
+- **GBIF** (`modules/gbif`): `GET /api/tiles/gbif/:taxonKey/:z/:x/:y.png`
+  proxies GBIF's density tiles with a cache under `data/cache/gbif`.
 
 ## Token refresh (Instagram, Threads)
 
 Meta's long-lived tokens expire 60 days after they were issued or last
-refreshed, and an expired one cannot be refreshed. The companion (`metatoken/`)
-keeps them alive: it stores the current token per target, encrypted with
-`TOKEN_ENCRYPTION_KEY`, in `platform_tokens`, puts it in place of the `.env`
-token on every config load, and refreshes it once a week (daily cron at 03:20,
-plus once a minute after startup). A failed refresh keeps the old token and is
-retried the next day. Design and decisions:
-[`docs/concepts/meta-token-refresh.md`](docs/concepts/meta-token-refresh.md).
-
-The dashboard's *Target Health* card shows each token's expiry, the last
-error, and a *Refresh token* button. `GET /api/admin/tokens` and
-`POST /api/admin/tokens/:target/refresh` do the same over the API; neither
-returns a token.
-
-If a token has expired anyway (access revoked at Meta, the companion down for
-weeks):
-
-1. Create a new long-lived token in Meta's app dashboard: *Instagram API
-   setup with Instagram business login* for Instagram, the Threads use case
-   for Threads.
-2. Put it in `.env`.
-3. `docker compose up -d companion`. A `restart` does not re-read `env_file`.
-
-A token in `.env` that differs from the one the stored token descends from
-always wins, so step 2 is all it takes; refresh carries on from there.
+refreshed, and an expired one cannot be refreshed. The `instagram` and
+`threads` modules keep the current token in the secret store, use it in
+place of the one in `.env` and refresh it once a week (`lib/metatoken`,
+[`docs/concepts/meta-token-refresh.md`](docs/concepts/meta-token-refresh.md)).
+Their settings page shows the expiry and the last error and refreshes on
+request. If a token expired anyway, put a new long-lived one into `.env`
+(a different one there always wins) or connect the account on the settings
+page.
 
 ## People in photos
 
-When a gallery item carries `lna:model` blocks (the people in the photo, with
-their profiles and consent, maintained in the Home-Page repository), every
-post names them in a line of its own between the alt text and the caption:
+When a gallery item carries `lna:model` blocks (the people in the photo,
+with their profiles and consent), every post names them in a line of its
+own between the alt text and the caption:
 
 ```
 With Jane Doe (@janedoe), Max Muster and Markus Penninger
 ```
 
-The words are `modelsPrefix` and `modelsAnd` on the connection (`With`/`and`
-by default, `Mit`/`und` for German). Names are never dropped: when a caption
-is too long, copyright, EXIF and hashtags go first, then the alt text and the
-caption are shortened at a sentence or word, then mentions become plain names,
-and only then is the names line itself cut.
-
-A person is **mentioned** only when the connection sets `tagModels: true` and
-the feed says `autotag="true"`. The mention uses the person's profile for the
-target platform: Instagram and Threads take the username from the URL,
-Bluesky looks the profile up (mention facet with the DID), Mastodon and
-Pixelfed resolve it with WebFinger and fall back to each other's profiles. On
-Instagram the person also gets a photo tag. A profile that does not resolve
-never fails the upload; the person is named without a mention and the slug is
-logged. The posting account never mentions itself (for Bluesky, `username`
-must be the handle, not an email). Design and decisions:
+The words are `modelsPrefix` and `modelsAnd` of the connection. Names are
+never dropped: when a caption is too long, copyright, EXIF and hashtags go
+first, then alt text and caption are shortened, then mentions become plain
+names, and only then is the names line cut. A person is mentioned only with
+`tagModels: true` on the connection and `autotag="true"` in the feed, with
+the profile for that network (Bluesky with the DID, Mastodon and Pixelfed
+through WebFinger); on Instagram they also get a photo tag. A profile that
+does not resolve never fails the post. Design:
 [`docs/concepts/model-tagging.md`](docs/concepts/model-tagging.md), feed
 format: [`docs/concepts/autouploader-model-tags.md`](docs/concepts/autouploader-model-tags.md).
 
-## Local development
+## Building your own companion
 
-Backend:
-
-```bash
-cd src
-go run main.go        # reads src/data/config.yaml
-```
-
-Frontend:
+Add or remove modules in [`build.yaml`](build.yaml) (`path@version`, or
+`path => ./dir` for a local one) and build the program or the image:
 
 ```bash
-cd web
-npm install
-npm run dev           # SvelteKit dev server, proxies API calls to :8080
+go run ./cmd/hpc build -f build.yaml -o companion   # the shell and module UIs need npm
+docker build -t companion .
 ```
 
-Adjust the proxy target in [`web/vite.config.ts`](web/vite.config.ts) if your
-backend runs somewhere other than `localhost:8080`.
+## Development
+
+```bash
+go run ./cmd/hpc dev -c data/companion.yaml   # rebuilds and restarts on change; the shell with hot reload at :5173
+go run ./cmd/hpc dev --service lemmy="python3 services/lemmy/lemmy.py"   # a service from its source (its block has a url:)
+go run ./cmd/hpc test modules/mastodon        # go vet and go test -race of one module
+go run ./cmd/hpc test --run "python3 services/lemmy/lemmy.py" --config lemmy.yaml   # a service against its capabilities' suites
+go run ./cmd/hpc gen                          # adapters, OpenAPI, TypeScript after changing a capability
+```
+
+The tests, as CI runs them:
+
+```bash
+scripts/go-each.sh vet ./... && scripts/go-each.sh test -race ./...   # every module
+scripts/check-tests-each.sh                                          # every package has tests
+(cd e2e && go test -race -tags integration ./...)                   # every module together, fake platforms
+(cd web && npm ci && npm run check && npm run build && npm run build:modules && npm run test:ui)
+docker build -t companion:test . && (cd e2e && COMPANION_IMAGE=companion:test go test -tags compose -run Compose ./...)
+python3 -m unittest discover -s sdk/python/tests
+```
+
+No automated test talks to a real platform. By hand: a service against a
+test account with `hpc test --run`, the S3 store against a bucket with
+`BLOB_S3_TEST_URL` set (`modules/blob-s3`), and a module's `-tags live`
+tests with `hpc test --live`.
 
 ## API testing
 
-REST requests are documented as a [Bruno](https://www.usebruno.com/)
-collection under [`bruno/`](bruno/). Open the directory in Bruno, pick an
-environment from `bruno/environments`, then run requests such as:
-
-- `UploadNext.bru` — trigger the next scheduled autoupload.
-- `Backfill.bru` — backfill items from configured datasources.
-- `Broadcast.bru` — send a web-push broadcast.
-- `Fetch Interactions.bru` / `Get Interactions.bru` — pull and inspect remote
-  interactions.
-- `Native Like.bru` / `Native Unlike.bru` / `Native Like Status.bru` — the
-  native-like flow.
-- `SendWebMention.bru` — send an outgoing webmention.
-- `GetVapidPublicKey.bru` — fetch the VAPID public key for the frontend.
-
-Admin endpoints require `ADMIN_API_KEY`. `/api/admin/client-logs` accepts the
-key via either the `Authorization` header or a `?token=` query parameter.
+The website's and scripts' requests are a [Bruno](https://www.usebruno.com/)
+collection in [`bruno/`](bruno/): the next upload, backfill, web-push
+broadcast, interactions, native likes, webmentions, the VAPID key. Admin
+requests send `Authorization: ApiKey <ADMIN_API_KEY>`.
 
 ## Repository layout
 
 ```
-src/                Go backend — main.go, autouploader/, admin/, interactions/, microblog/, webpush/, ...
-web/                SvelteKit frontend — routes, components, Nginx Dockerfile
-bruno/              Bruno REST API collection
-src/data/           Runtime volume — SQLite DB, logs, microblog media, config.yaml
-.github/workflows/  CI — build.yaml, build-web.yml
-Dockerfile          Multi-stage Go build (golang:1.25 → debian:bookworm-slim)
-docker-compose.yml  Two-service compose (companion + web)
+core/ companion/ capability/   the core, the building blocks' SDK, the capabilities
+modules/                       compiled-in building blocks, one Go module each
+services/ service/ sdk/        services, and the SDKs to write them (Go, Python)
+cmd/hpc/                       hpc: build, apply, dev, test, gen
+web/                           the admin shell and @companion/ui
+lib/                           shared code of several modules (fediauth, metatoken, …)
+e2e/                           integration, Compose and website tests, the test world
+docs/                          concepts, the service protocol, OpenAPI of the capabilities
+build.yaml                     what the image compiles in
+companion.yaml.example         what runs and how it is connected
+Dockerfile, docker-compose.yml one container
 ```

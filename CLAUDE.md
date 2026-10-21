@@ -1,6 +1,9 @@
 # HomePageCompanion
 
-Go backend in `src/`, SvelteKit admin UI in `web/`, concepts in `docs/concepts/`.
+Go core in `core/`, building blocks in `modules/` (one Go module each) and
+`services/`, capabilities in `capability/`, the `hpc` tool in `cmd/hpc/`,
+SvelteKit admin shell in `web/`, concepts in `docs/concepts/`, the service
+protocol in `docs/services/`.
 
 ## Commits and pull requests
 

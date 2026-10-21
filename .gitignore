@@ -23,13 +23,11 @@
 .env
 
 companion.db
-src/data/config.yaml
 
 __debug*
 
 # Built binaries (the old one, and hpc build's default output)
 /home-page-companion
-/src/home-page-companion
 # hpc build -o companion at the root writes into the SDK directory
 /companion/companion
 
@@ -42,10 +40,6 @@ web/.svelte-kit/
 *.db-journal
 *.db-wal
 *.db-shm
-src/cmd/migrate-guids/main.go
-src/data/logs/**
-src/data/microblog/**
-src/data/trips/**
 .inbox/**
 
 # The old installation the migration's end-to-end test moves over.
@@ -64,5 +58,7 @@ web/ui-screenshots/
 # hpc apply: the generated compose file and the git sources it builds
 /compose.generated.yml
 /.hpc/
+
+# Python
 __pycache__/
 *.pyc
