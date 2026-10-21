@@ -100,6 +100,9 @@ type InstanceView struct {
 	Slots     map[string][]string `json:"slots"`
 	Config    map[string]any      `json:"config,omitempty"`
 	Schema    []Field             `json:"schema,omitempty"`
+	// OAuth is set for an instance that connects its account through
+	// OAuth (companion.OAuthConnector).
+	OAuth *companion.OAuthState `json:"oauth,omitempty"`
 }
 
 func (c *Core) viewOf(in *instance, full bool) InstanceView {
@@ -138,13 +141,20 @@ func (c *Core) getInstance(g *gin.Context) {
 	c.mu.RLock()
 	in, ok := c.instances[g.Param("id")]
 	var v InstanceView
+	var value companion.Instance
 	if ok {
 		v = c.viewOf(in, true)
+		value = in.value
 	}
 	c.mu.RUnlock()
 	if !ok {
 		g.JSON(http.StatusNotFound, gin.H{"error": "no such instance"})
 		return
+	}
+	// Outside the lock: the state comes from the secret store.
+	if conn, ok := value.(companion.OAuthConnector); ok {
+		st := conn.OAuthState()
+		v.OAuth = &st
 	}
 	g.JSON(http.StatusOK, v)
 }

@@ -70,6 +70,16 @@ export interface InstanceView {
 	slots: Record<string, string[]> | null;
 	config?: Record<string, unknown>;
 	schema?: Field[];
+	// Set for an instance whose account is connected through OAuth.
+	oauth?: OAuthState;
+}
+
+export interface OAuthState {
+	connected: boolean;
+	account?: string;
+	since?: string;
+	expiresAt?: string;
+	note?: string;
 }
 
 export interface JobRun {

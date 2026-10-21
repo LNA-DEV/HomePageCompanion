@@ -13,6 +13,7 @@ import (
 
 	"github.com/LNA-DEV/HomePageCompanion/capability/social"
 	"github.com/LNA-DEV/HomePageCompanion/companion"
+	"github.com/LNA-DEV/HomePageCompanion/lib/fediauth"
 	"github.com/LNA-DEV/HomePageCompanion/lib/imageresize"
 	"github.com/LNA-DEV/HomePageCompanion/lib/profiles"
 	"github.com/LNA-DEV/HomePageCompanion/modules/mastodon/api"
@@ -46,12 +47,70 @@ type Account struct {
 	MaxImageLongEdge int `json:"maxImageLongEdge"`
 
 	ctx      companion.Context
+	oauth    *fediauth.Conn
 	selfMu   sync.Mutex
 	self     string
 	selfTime time.Time
 }
 
-func (a *Account) Provision(ctx companion.Context) error { a.ctx = ctx; return nil }
+// oauthScopes are what the module calls: posting with images and deleting
+// (write:statuses, write:media), the account (read:accounts), likes and
+// replies (read:statuses).
+var oauthScopes = []string{"read:accounts", "read:statuses", "write:media", "write:statuses"}
+
+func (a *Account) Provision(ctx companion.Context) error {
+	a.ctx = ctx
+	a.oauth = fediauth.New(ctx, oauthScopes)
+	return nil
+}
+
+// token is the connected account's token, or else the configured one.
+func (a *Account) token(ctx context.Context) (string, error) {
+	if tok, ok, err := a.oauth.Token(ctx); ok || err != nil {
+		return tok, err
+	}
+	if a.Token == "" {
+		return "", fmt.Errorf("mastodon %s: %w: connect it on its settings page or set token", a.ctx.InstanceName(), social.ErrNotConnected)
+	}
+	return a.Token, nil
+}
+
+func (a *Account) OAuthClient(ctx context.Context, redirectURI string) (companion.OAuthClient, error) {
+	return a.oauth.Client(ctx, a.Instance, redirectURI)
+}
+
+// OAuthConnect checks the new token and keeps it; the account is
+// @user@server.
+func (a *Account) OAuthConnect(ctx context.Context, client companion.OAuthClient, tok companion.OAuthToken) (string, error) {
+	acc, err := api.VerifyCredentials(ctx, a.Instance, tok.AccessToken)
+	if err != nil {
+		return "", err
+	}
+	name := "@" + acc.Username + "@" + host(a.Instance)
+	a.forgetSelf()
+	return name, a.oauth.Connect(client, tok, name, acc.ID)
+}
+
+func (a *Account) OAuthState() companion.OAuthState { return a.oauth.State(a.Token != "") }
+
+func (a *Account) OAuthDisconnect(ctx context.Context) error {
+	a.forgetSelf()
+	return a.oauth.Disconnect(ctx, a.Instance)
+}
+
+func (a *Account) forgetSelf() {
+	a.selfMu.Lock()
+	a.self = ""
+	a.selfMu.Unlock()
+}
+
+func host(instance string) string {
+	h := strings.TrimRight(strings.TrimSpace(instance), "/")
+	if i := strings.Index(h, "://"); i >= 0 {
+		h = h[i+3:]
+	}
+	return h
+}
 
 func (a *Account) Validate() error {
 	if strings.TrimSpace(a.Instance) == "" {
@@ -114,6 +173,10 @@ func wrap(err error) error {
 // Publish uploads the images (fitted to the instance's limits) and creates
 // a public status.
 func (a *Account) Publish(ctx context.Context, p social.Post) (social.Result, error) {
+	tok, err := a.token(ctx)
+	if err != nil {
+		return social.Result{}, err
+	}
 	var mediaIDs []string
 	for i, img := range p.Images {
 		if i == 4 {
@@ -128,13 +191,13 @@ func (a *Account) Publish(ctx context.Context, p social.Post) (social.Result, er
 		} else {
 			data = prepared
 		}
-		media, err := api.UploadMedia(a.Instance, a.Token, data, img.Alt)
+		media, err := api.UploadMedia(a.Instance, tok, data, img.Alt)
 		if err != nil {
 			return social.Result{}, wrap(err)
 		}
 		mediaIDs = append(mediaIDs, media.ID)
 	}
-	status, err := api.CreateStatus(a.Instance, a.Token, text(p), p.ContentWarning, mediaIDs, "public")
+	status, err := api.CreateStatus(a.Instance, tok, text(p), p.ContentWarning, mediaIDs, "public")
 	if err != nil {
 		return social.Result{}, wrap(err)
 	}
@@ -142,8 +205,12 @@ func (a *Account) Publish(ctx context.Context, p social.Post) (social.Result, er
 }
 
 // Delete removes a status; one that is gone already counts as deleted.
-func (a *Account) Delete(_ context.Context, ref social.Result) error {
-	err := api.DeleteStatus(a.Instance, a.Token, ref.ID)
+func (a *Account) Delete(ctx context.Context, ref social.Result) error {
+	tok, err := a.token(ctx)
+	if err != nil {
+		return err
+	}
+	err = api.DeleteStatus(a.Instance, tok, ref.ID)
 	if errors.Is(err, api.ErrNotFound) {
 		return nil
 	}
@@ -157,7 +224,11 @@ func (a *Account) selfAcct(ctx context.Context) (string, error) {
 	if a.self != "" && time.Since(a.selfTime) < time.Hour {
 		return a.self, nil
 	}
-	acc, err := api.VerifyCredentials(ctx, a.Instance, a.Token)
+	tok, err := a.token(ctx)
+	if err != nil {
+		return "", err
+	}
+	acc, err := api.VerifyCredentials(ctx, a.Instance, tok)
 	if err != nil {
 		return "", err
 	}
@@ -192,19 +263,27 @@ func (a *Account) ResolveMention(ctx context.Context, profileURL string) (social
 	return social.Mention{Text: mention, Account: id}, nil
 }
 
-func (a *Account) GetStats(_ context.Context, ref social.Result) (social.Stats, error) {
+func (a *Account) GetStats(ctx context.Context, ref social.Result) (social.Stats, error) {
 	if ref.ID == "" {
 		return social.Stats{}, errors.New("mastodon: missing status id")
 	}
-	resp, err := api.ListStatusLikes(a.Instance, a.Token, ref.ID)
+	tok, err := a.token(ctx)
+	if err != nil {
+		return social.Stats{}, err
+	}
+	resp, err := api.ListStatusLikes(a.Instance, tok, ref.ID)
 	if err != nil {
 		return social.Stats{}, wrap(err)
 	}
 	return social.Stats{Likes: len(resp.Accounts)}, nil
 }
 
-func (a *Account) ListReplies(_ context.Context, ref social.Result) ([]social.Reply, error) {
-	c, err := api.ListStatusContext(a.Instance, a.Token, ref.ID)
+func (a *Account) ListReplies(ctx context.Context, ref social.Result) ([]social.Reply, error) {
+	tok, err := a.token(ctx)
+	if err != nil {
+		return nil, err
+	}
+	c, err := api.ListStatusContext(a.Instance, tok, ref.ID)
 	if err != nil {
 		return nil, wrap(err)
 	}
@@ -224,6 +303,8 @@ var (
 	_ social.Publisher    = (*Account)(nil)
 	_ social.Interactions = (*Account)(nil)
 	_ social.Deleter      = (*Account)(nil)
+
+	_ companion.OAuthConnector = (*Account)(nil)
 )
 
 func routes(mc companion.ModuleContext, r *companion.Router) {
@@ -238,7 +319,12 @@ func routes(mc companion.ModuleContext, r *companion.Router) {
 				continue
 			}
 			a := in.Instance.(*Account)
-			acc, err := api.VerifyCredentials(c.Request.Context(), a.Instance, a.Token)
+			tok, err := a.token(c.Request.Context())
+			if err != nil {
+				c.JSON(http.StatusBadGateway, gin.H{"ok": false, "error": err.Error()})
+				return
+			}
+			acc, err := api.VerifyCredentials(c.Request.Context(), a.Instance, tok)
 			if err != nil {
 				c.JSON(http.StatusBadGateway, gin.H{"ok": false, "error": err.Error()})
 				return

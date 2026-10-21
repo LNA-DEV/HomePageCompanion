@@ -21,6 +21,7 @@ func TestClassify(t *testing.T) {
 		{"plain 403", errors.New("status: 403 forbidden"), "auth", CauseAccount, 403},
 		{"plain 429", &StatusError{429, errors.New("slow down")}, "rate_limited", CauseTransient, 429},
 		{"rate limit sentinel", fmt.Errorf("mastodon: %w", ErrRateLimited), "rate_limited", CauseTransient, 0},
+		{"not connected", fmt.Errorf("pixelfed main: %w", ErrNotConnected), "auth", CauseAccount, 0},
 		{"500 outage", errors.New("status: 500 internal server error"), "server", CauseTransient, 500},
 		{"502", &StatusError{502, errors.New("bad gateway")}, "server", CauseTransient, 502},
 		{"no such host", errors.New("dial tcp: lookup bsky.social: no such host"), "network", CauseTransient, 0},

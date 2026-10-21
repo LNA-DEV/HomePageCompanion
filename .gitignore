@@ -30,7 +30,8 @@ __debug*
 # Built binaries (the old one, and hpc build's default output)
 /home-page-companion
 /src/home-page-companion
-/companion
+# hpc build -o companion at the root writes into the SDK directory
+/companion/companion
 
 # Node.js / SvelteKit
 web/node_modules/

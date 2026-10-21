@@ -136,6 +136,13 @@ func (c *Core) rebuildGateway() error {
 	}
 
 	admin := c.requireAdmin()
+	// The OAuth routes first: a module that defines them itself fails at
+	// its Routes below, with its name in the error.
+	for _, b := range blocks {
+		if connectsAccounts(b.info) {
+			c.oauthRoutes(r, admin, b.info.ID)
+		}
+	}
 	for _, b := range blocks {
 		if b.info.Routes == nil {
 			continue

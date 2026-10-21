@@ -60,6 +60,9 @@ func Classify(err error) Failure {
 	if errors.Is(err, ErrNeedsImage) {
 		code = "content"
 	}
+	if errors.Is(err, ErrNotConnected) {
+		code = "auth"
+	}
 	return Failure{Code: code, Cause: causeOf(code), HTTPStatus: status}
 }
 

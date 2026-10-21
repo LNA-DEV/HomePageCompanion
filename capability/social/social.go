@@ -60,6 +60,11 @@ var (
 	// ErrNeedsImage is returned by Publish for a post without an image on a
 	// target with RequiresImage.
 	ErrNeedsImage = errors.New("needs an image")
+
+	// ErrNotConnected is returned when an account has neither a connected
+	// OAuth token nor one in the config, or its connection broke (the
+	// platform refused to refresh it). Only the operator can fix it.
+	ErrNotConnected = errors.New("no account connected")
 )
 
 // Post is what a building block wants posted.

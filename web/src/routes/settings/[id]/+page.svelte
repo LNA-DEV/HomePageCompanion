@@ -38,6 +38,42 @@
 		if (id) load(id);
 	});
 
+	// Back from the platform: /settings/<id>?oauth=connected&account=… or
+	// ?oauth=error&message=… (core/oauth.go).
+	$effect(() => {
+		const q = $page.url.searchParams;
+		const result = q.get('oauth');
+		if (!result) return;
+		if (result === 'connected') toast(`Account connected: ${q.get('account') ?? ''}`, 'success');
+		else toast(q.get('message') ?? 'The account was not connected', 'error');
+		history.replaceState(history.state, '', $page.url.pathname);
+	});
+
+	async function connect() {
+		if (!view) return;
+		busy = 'oauth';
+		try {
+			const r = await client(`/api/b/${view.block}`).post<{ url: string }>('oauth/start', { instance: view.name });
+			window.location.assign(r.url);
+		} catch (err) {
+			toast(`Connect: ${err instanceof Error ? err.message : err}`, 'error');
+			busy = '';
+		}
+	}
+
+	async function disconnect() {
+		if (!view || !confirm(`Disconnect the account of ${view.id}? Until you connect it again, the token in companion.yaml is used, if there is one.`)) return;
+		busy = 'oauth';
+		try {
+			await client(`/api/b/${view.block}`).post('oauth/disconnect', { instance: view.name });
+			toast('Account disconnected', 'success');
+			await load(view.id);
+		} catch (err) {
+			toast(`Disconnect: ${err instanceof Error ? err.message : err}`, 'error');
+		}
+		busy = '';
+	}
+
 	function providers(f: Field): InstanceView[] {
 		return all.filter((i) => i.id !== view?.id && (i.provides ?? []).includes(f.slot ?? ''));
 	}
@@ -138,6 +174,26 @@
 			{/each}
 		</dl>
 	</div>
+
+	{#if view.oauth}
+		{@const o = view.oauth}
+		<section class="card mb-6 flex flex-wrap items-start justify-between gap-4" data-testid="oauth-card">
+			<div class="text-sm">
+				<h2 class="text-lg font-semibold mb-1">Account</h2>
+				{#if o.connected}
+					<p>Connected as <span class="font-medium">{o.account}</span>{#if o.since} since {formatDate(o.since, false)}{/if}.</p>
+					{#if o.expiresAt}<p class="text-gray-500 dark:text-gray-400">The token is valid until {formatDate(o.expiresAt)}; it is refreshed by itself.</p>{/if}
+				{:else}
+					<p class="text-gray-600 dark:text-gray-300">Not connected. Connect the account here, or put a token into the settings below.</p>
+				{/if}
+				{#if o.note}<p class="mt-1 text-amber-700 dark:text-amber-300">{o.note}</p>{/if}
+			</div>
+			<div class="flex gap-2">
+				<button class="btn-primary btn-sm" disabled={busy !== ''} onclick={connect}>{o.connected ? 'Reconnect' : 'Connect account'}</button>
+				{#if o.connected}<button class="btn-secondary btn-sm" disabled={busy !== ''} onclick={disconnect}>Disconnect</button>{/if}
+			</div>
+		</section>
+	{/if}
 
 	{#if mod?.settings && mod.hasUi}
 		<div class="card">

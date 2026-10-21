@@ -65,6 +65,7 @@ type Core struct {
 	metrics    *metrics
 	temp       *tempStore
 	sessions   *sessions
+	flows      oauthFlows
 	services   *serviceManager
 	httpClient *http.Client
 
