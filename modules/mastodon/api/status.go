@@ -20,7 +20,10 @@ type Status struct {
 
 // CreateStatus publishes a status on the configured Mastodon instance.
 // visibility defaults to "public" if empty. mediaIDs is optional.
-func CreateStatus(instance, pat, body, spoiler string, mediaIDs []string, visibility string) (*Status, error) {
+// CreateStatus posts a status. A non-empty idempotencyKey goes into the
+// Idempotency-Key header: Mastodon answers a second request with the same
+// key (within an hour) with the status the first created.
+func CreateStatus(instance, pat, body, spoiler string, mediaIDs []string, visibility, idempotencyKey string) (*Status, error) {
 	instance = trimInstance(instance)
 	if instance == "" {
 		return nil, fmt.Errorf("mastodon: empty instance")
@@ -46,6 +49,9 @@ func CreateStatus(instance, pat, body, spoiler string, mediaIDs []string, visibi
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, instance+"/api/v1/statuses", strings.NewReader(form.Encode()))
+	if err == nil && idempotencyKey != "" {
+		req.Header.Set("Idempotency-Key", idempotencyKey)
+	}
 	if err != nil {
 		return nil, err
 	}

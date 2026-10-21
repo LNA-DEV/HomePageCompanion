@@ -36,6 +36,29 @@ type jobEntry struct {
 	mc      companion.ModuleContext
 	running atomic.Bool
 	lastRun atomic.Pointer[jobRun]
+	cancel  atomic.Pointer[context.CancelFunc] // of the running run
+}
+
+// stopGrace is how long Stop waits for running jobs once it cancelled
+// them. A job stuck in a call that ignores its context is left behind:
+// Docker kills a container ten seconds after SIGTERM anyway, and the run
+// is marked interrupted at the next start.
+const stopGrace = 5 * time.Second
+
+// interrupted is the error of a run the process did not finish.
+const interrupted = "interrupted: the companion stopped during the run"
+
+// markInterruptedRuns closes the runs a stop or a kill left unfinished, so
+// they do not show as running for ever.
+func (c *Core) markInterruptedRuns() {
+	if c.db == nil {
+		return
+	}
+	now := time.Now()
+	res := c.db.Model(&jobRun{}).Where("finished_at IS NULL").Updates(map[string]any{"finished_at": now, "ok": false, "error": interrupted})
+	if res.RowsAffected > 0 {
+		c.log.Printf("jobs: %d run(s) were interrupted by the last stop", res.RowsAffected)
+	}
 }
 
 // scheduler runs jobs on their schedule and by hand. robfig/cron v1 has a
@@ -115,14 +138,36 @@ func (s *scheduler) reschedule() {
 	s.cron.Start()
 }
 
+// stop ends the schedule, cancels the running jobs and waits for them up
+// to stopGrace.
 func (s *scheduler) stop() {
 	s.mu.Lock()
 	if s.cron != nil {
 		s.cron.Stop()
 		s.cron = nil
 	}
+	for _, e := range s.entries {
+		if cancel := e.cancel.Load(); cancel != nil {
+			(*cancel)()
+		}
+	}
 	s.mu.Unlock()
-	s.wg.Wait()
+	done := make(chan struct{})
+	go func() { s.wg.Wait(); close(done) }()
+	select {
+	case <-done:
+	case <-time.After(stopGrace):
+		var still []string
+		s.mu.Lock()
+		for k, e := range s.entries {
+			if e.running.Load() {
+				still = append(still, k)
+			}
+		}
+		s.mu.Unlock()
+		sort.Strings(still)
+		s.c.log.Printf("jobs: %v still running %s after the stop; leaving them", still, stopGrace)
+	}
 }
 
 func (s *scheduler) fire(key, trigger string) {
@@ -157,6 +202,8 @@ func (s *scheduler) run(key, trigger string, wait bool) (*jobRun, error) {
 			timeout = time.Hour
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), timeout)
+		e.cancel.Store(&cancel)
+		defer e.cancel.Store(nil)
 		defer cancel()
 		err := safely(func() error {
 			switch {

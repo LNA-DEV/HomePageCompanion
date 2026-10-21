@@ -80,6 +80,11 @@ type Post struct {
 	// Mentions are the mentions the text contains, as ResolveMention
 	// returned them; networks that need facets or photo tags read them here.
 	Mentions []Mention `json:"mentions,omitempty"`
+	// IdempotencyKey is the same for every try of this post on this
+	// target. A network that honours one (Mastodon's Idempotency-Key)
+	// creates the post once, even when the answer to a try got lost, e.g.
+	// because the companion was stopped or killed during the call.
+	IdempotencyKey string `json:"idempotencyKey,omitempty"`
 }
 
 // Image is an image to attach. URL is a public http(s) URL or a URL of the

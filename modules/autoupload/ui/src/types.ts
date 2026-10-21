@@ -110,7 +110,7 @@ export interface Run {
 	trigger: string;
 	startedAt: string;
 	finishedAt?: string;
-	result: 'running' | 'published' | 'skipped' | 'failed' | 'nothing' | 'paused';
+	result: 'running' | 'published' | 'skipped' | 'failed' | 'nothing' | 'paused' | 'interrupted';
 	itemId?: string;
 	title?: string;
 	target: string;
@@ -177,5 +177,6 @@ export const resultLabel: Record<string, string> = {
 	skipped: 'Skipped',
 	failed: 'Failed',
 	nothing: 'Nothing left to post',
-	paused: 'Paused'
+	paused: 'Paused',
+	interrupted: 'Interrupted: the companion stopped during the run'
 };

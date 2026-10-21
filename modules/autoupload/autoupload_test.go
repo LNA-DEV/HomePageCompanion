@@ -330,6 +330,36 @@ func TestRetryLeavesOtherSourcesAlone(t *testing.T) {
 	}
 }
 
+// Every try of the same post on the same target carries the same key, so
+// a network that honours it (Mastodon) creates it once even when the answer
+// to a try got lost. Allowing a repost gives the next one a new key.
+func TestIdempotencyKeys(t *testing.T) {
+	e := setup(t)
+	e.masto.FailOnce(errors.New("mastodon create status: status: 503 body: down"))
+	failed := e.run(t, "photos-mastodon")
+	base := "/api/b/autoupload/items/" + failed.ItemID + "/targets/fake.publisher:mastodon/"
+	if w := e.h.Admin("POST", base+"publish-now", nil); w.Code != 200 {
+		t.Fatalf("publish-now %d %s", w.Code, w.Body)
+	}
+	e.h.Admin("POST", base+"allow-repost", map[string]bool{"confirm": true})
+	e.h.Admin("POST", base+"publish-now", nil)
+	e.run(t, "photos-mastodon")
+	tried := e.masto.Tried
+	if len(tried) != 4 {
+		t.Fatalf("tried %d times", len(tried))
+	}
+	k := tried[0].IdempotencyKey
+	if k == "" || tried[1].IdempotencyKey != k {
+		t.Fatalf("the retry has another key: %q, %q", k, tried[1].IdempotencyKey)
+	}
+	if tried[2].IdempotencyKey == k || tried[2].IdempotencyKey == "" {
+		t.Fatalf("the repost reuses the key %q", k)
+	}
+	if tried[3].ItemID == failed.ItemID || tried[3].IdempotencyKey == k || tried[3].IdempotencyKey == tried[2].IdempotencyKey {
+		t.Fatalf("another post with the same key: %+v", tried[3])
+	}
+}
+
 func TestActions(t *testing.T) {
 	e := setup(t)
 	e.run(t, "photos-mastodon")

@@ -23,6 +23,7 @@ import (
 type fakeMastodon struct {
 	mu       sync.Mutex
 	statuses []url.Values
+	keys     []string // Idempotency-Key of each status
 	media    []string
 	limited  bool
 	*httptest.Server
@@ -52,6 +53,7 @@ func newFake(t *testing.T) *fakeMastodon {
 		}
 		r.ParseForm()
 		f.statuses = append(f.statuses, r.PostForm)
+		f.keys = append(f.keys, r.Header.Get("Idempotency-Key"))
 		fmt.Fprintf(w, `{"id":"%d","url":"https://social.example/@lna/%d"}`, len(f.statuses), len(f.statuses))
 	})
 	mux.HandleFunc("DELETE /api/v1/statuses/{id}", func(w http.ResponseWriter, r *http.Request) {
@@ -119,6 +121,17 @@ func TestPublishSendsImagesAltTextAndCW(t *testing.T) {
 	a.Publish(context.Background(), social.Post{Text: "New post", Link: &social.LinkCard{URL: "https://example.com/p/"}})
 	if got := f.statuses[1].Get("status"); got != "New post\n\nhttps://example.com/p/" {
 		t.Fatalf("link: %q", got)
+	}
+}
+
+// The key makes Mastodon create a status once, even when a try's answer
+// got lost and the companion tries again.
+func TestIdempotencyKey(t *testing.T) {
+	_, f, a := setup(t)
+	a.Publish(context.Background(), social.Post{Text: "x", IdempotencyKey: "k1"})
+	a.Publish(context.Background(), social.Post{Text: "y"})
+	if f.keys[0] != "k1" || f.keys[1] != "" {
+		t.Fatalf("keys %q", f.keys)
 	}
 }
 

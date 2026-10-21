@@ -63,7 +63,8 @@
 	const resultColor: Record<string, string> = {
 		published: 'text-emerald-700 dark:text-emerald-400',
 		failed: 'text-red-700 dark:text-red-400',
-		paused: 'text-amber-700 dark:text-amber-400'
+		paused: 'text-amber-700 dark:text-amber-400',
+		interrupted: 'text-amber-700 dark:text-amber-400'
 	};
 
 	onMount(load);

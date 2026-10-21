@@ -3,6 +3,7 @@ package core_test
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -10,6 +11,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/LNA-DEV/HomePageCompanion/capability/social"
 	"github.com/LNA-DEV/HomePageCompanion/companion"
@@ -51,8 +53,23 @@ func (c *consumer) Jobs() []companion.Job {
 	return []companion.Job{
 		{Name: "count", Run: func(context.Context) error { c.mu.Lock(); c.ran++; c.mu.Unlock(); return nil }},
 		{Name: "panic", Run: func(context.Context) error { var m map[string]int; m["x"]++; return nil }},
+		// patient stops when cancelled; stuck ignores it, as a platform
+		// call without a context does.
+		{Name: "patient", Run: func(ctx context.Context) error {
+			jobStarted <- "patient"
+			<-ctx.Done()
+			jobCancelled <- ctx.Err()
+			return ctx.Err()
+		}},
+		{Name: "stuck", Run: func(context.Context) error { jobStarted <- "stuck"; <-stuckRelease; return nil }},
 	}
 }
+
+var (
+	jobStarted   = make(chan string, 4)
+	jobCancelled = make(chan error, 1)
+	stuckRelease = make(chan struct{})
+)
 
 func (c *consumer) HandleEvent(_ context.Context, ev companion.Event) error {
 	c.mu.Lock()
@@ -250,6 +267,58 @@ func TestOldAuthWays(t *testing.T) {
 	// As before, the token in the URL is for the log ingest only.
 	if got := call("GET", "/api/core/overview?token="+companiontest.AdminKey, "", nil); got != http.StatusUnauthorized {
 		t.Errorf("?token= on another route: %d", got)
+	}
+}
+
+// Stop cancels the running jobs and waits for them only a few seconds: a
+// container that does not stop within ten is killed.
+func TestStopDoesNotWaitForAHungJob(t *testing.T) {
+	h := companiontest.New(t, baseConfig)
+	defer close(stuckRelease)
+	for _, j := range []string{"patient", "stuck"} {
+		if w := h.Admin("POST", "/api/core/jobs/run", map[string]any{"key": "t.consumer:a/" + j}); w.Code != http.StatusAccepted {
+			t.Fatalf("run %s: %d", j, w.Code)
+		}
+		<-jobStarted
+	}
+	began := time.Now()
+	h.Core.Stop(context.Background())
+	if d := time.Since(began); d > 8*time.Second {
+		t.Fatalf("Stop took %s", d)
+	}
+	select {
+	case err := <-jobCancelled:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("patient job ended with %v", err)
+		}
+	default:
+		t.Fatal("Stop did not cancel the running job")
+	}
+}
+
+// A run the process did not finish (killed, or stopped while a job hung) is
+// marked interrupted when the companion starts again.
+func TestUnfinishedJobRunsAreMarkedInterrupted(t *testing.T) {
+	h := companiontest.New(t, baseConfig)
+	h.Core.DB().Exec("INSERT INTO core_job_runs (job, trigger, started_at, ok) VALUES ('t.consumer:a/count', 'schedule', ?, 0)", time.Now().Add(-time.Hour))
+	core.MarkInterruptedRuns(h.Core) // what Start does first
+	var r struct {
+		FinishedAt *time.Time
+		Error      string
+	}
+	h.Core.DB().Raw("SELECT finished_at, error FROM core_job_runs WHERE job = 't.consumer:a/count'").Scan(&r)
+	if r.FinishedAt == nil || !strings.Contains(r.Error, "interrupted") {
+		t.Fatalf("unfinished run %+v", r)
+	}
+	var jobs []struct {
+		Key     string
+		LastRun *struct{ Error string }
+	}
+	json.Unmarshal(h.Admin("GET", "/api/core/jobs", nil).Body.Bytes(), &jobs)
+	for _, j := range jobs {
+		if j.Key == "t.consumer:a/count" && (j.LastRun == nil || !strings.Contains(j.LastRun.Error, "interrupted")) {
+			t.Fatalf("jobs page %+v", j)
+		}
 	}
 }
 

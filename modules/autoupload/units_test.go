@@ -9,6 +9,7 @@ import (
 
 	"github.com/LNA-DEV/HomePageCompanion/capability/feed"
 	"github.com/LNA-DEV/HomePageCompanion/capability/social"
+	"github.com/LNA-DEV/HomePageCompanion/companiontest"
 )
 
 // A blog post gets title, excerpt and link; when space runs out the excerpt
@@ -196,5 +197,24 @@ func TestLegacyRef(t *testing.T) {
 	}
 	if id, url, _ := legacyRef("mastodon", "https://m/1", "", "1"); id != "1" || url != "https://m/1" {
 		t.Fatal(id, url)
+	}
+}
+
+// A run the process did not finish is closed as interrupted at the next
+// start, so the schedule does not show it as running for ever.
+func TestUnfinishedRunsAreClosedAtStart(t *testing.T) {
+	h := companiontest.New(t, "modules:\n  fake.source: {}\n  fake.publisher: {}\n  autoupload:\n    instances:\n      photos-mastodon: { source: fake.source, target: fake.publisher }\n")
+	mc := h.Module("autoupload")
+	mc.DB().Exec("INSERT INTO autoupload_runs (connection, trigger, started_at, result, target) VALUES ('photos-mastodon', 'manual', ?, 'running', 'mastodon:main')", time.Now())
+	if err := start(mc); err != nil {
+		t.Fatal(err)
+	}
+	var r struct {
+		Result, Error string
+		FinishedAt    *time.Time
+	}
+	mc.DB().Raw("SELECT result, error, finished_at FROM autoupload_runs").Scan(&r)
+	if r.Result != "interrupted" || r.FinishedAt == nil || !strings.Contains(r.Error, "stopped during the run") {
+		t.Fatalf("run %+v", r)
 	}
 }

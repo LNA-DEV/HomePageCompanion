@@ -141,6 +141,7 @@ func (c *Core) Start(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	c.markInterruptedRuns()
 	for _, id := range c.order {
 		if err := c.startInstance(next[id]); err != nil {
 			c.stopAll(ctx, next, nil)

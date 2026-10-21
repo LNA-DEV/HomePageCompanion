@@ -22,6 +22,13 @@ func start(mc companion.ModuleContext) error {
 	if err := migrate(mc); err != nil {
 		return err
 	}
+	// A run the last process did not finish (stopped or killed while a
+	// platform call hung) would show as running for ever.
+	now := time.Now()
+	if res := mc.DB().Model(&Run{}).Where("result = ?", "running").
+		Updates(map[string]any{"result": "interrupted", "error": "the companion stopped during the run", "finished_at": now}); res.RowsAffected > 0 {
+		mc.Log().Printf("%d run(s) were interrupted by the last stop", res.RowsAffected)
+	}
 	go func() {
 		defer func() { recover() }()
 		if err := syncIndex(context.Background(), mc); err != nil {

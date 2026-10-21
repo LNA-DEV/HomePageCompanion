@@ -41,6 +41,7 @@ type FakePublisher struct {
 
 	mu        sync.Mutex
 	Published []social.Post
+	Tried     []social.Post // every Publish, failed ones included
 	// Err, when set, fails the next publishes; ErrOnce only the next one.
 	Err     error
 	ErrOnce error
@@ -71,6 +72,7 @@ func (f *FakePublisher) Preview(_ context.Context, p social.Post) (social.Render
 func (f *FakePublisher) Publish(_ context.Context, p social.Post) (social.Result, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	f.Tried = append(f.Tried, p)
 	if f.ErrOnce != nil {
 		err := f.ErrOnce
 		f.ErrOnce = nil

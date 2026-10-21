@@ -8,7 +8,9 @@ import (
 	"bytes"
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/base32"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"path"
@@ -195,6 +197,13 @@ func (b *Blog) image(ctx context.Context, post *Post) (string, error) {
 	return b.ctx.Temp().Put(ctx, buf.Bytes(), info.ContentType, 6*time.Hour)
 }
 
+// idempotencyKey is the same for every try of a post on a target, the
+// retry included (social.Post.IdempotencyKey).
+func idempotencyKey(target, slug string) string {
+	sum := sha256.Sum256([]byte("microblog\x00" + target + "\x00" + slug))
+	return hex.EncodeToString(sum[:16])
+}
+
 func (b *Blog) publish(ctx context.Context, post *Post, pub *Publication) Publication {
 	target, ok := b.PublishTo[pub.Target]
 	var res social.Result
@@ -202,7 +211,7 @@ func (b *Blog) publish(ctx context.Context, post *Post, pub *Publication) Public
 	if !ok {
 		err = fmt.Errorf("microblog: target %s is no longer configured", pub.Target)
 	} else {
-		p := social.Post{ItemID: post.Slug, Kind: "note", Text: post.Body, ContentWarning: post.ContentWarning}
+		p := social.Post{ItemID: post.Slug, Kind: "note", Text: post.Body, ContentWarning: post.ContentWarning, IdempotencyKey: idempotencyKey(pub.Target, post.Slug)}
 		if strings.TrimSpace(post.ImageURL) != "" {
 			var url string
 			url, err = b.image(ctx, post)

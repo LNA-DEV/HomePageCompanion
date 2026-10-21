@@ -197,7 +197,7 @@ func (a *Account) Publish(ctx context.Context, p social.Post) (social.Result, er
 		}
 		mediaIDs = append(mediaIDs, media.ID)
 	}
-	status, err := api.CreateStatus(a.Instance, tok, text(p), p.ContentWarning, mediaIDs, "public")
+	status, err := api.CreateStatus(a.Instance, tok, text(p), p.ContentWarning, mediaIDs, "public", p.IdempotencyKey)
 	if err != nil {
 		return social.Result{}, wrap(err)
 	}

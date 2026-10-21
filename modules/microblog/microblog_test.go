@@ -85,6 +85,10 @@ func TestCreatePublishesEverywhere(t *testing.T) {
 	if w := h.Admin("POST", "/api/b/microblog/posts/1/retry/2", nil); w.Code != 409 {
 		t.Fatalf("retry twice: %d", w.Code)
 	}
+	// The retry on bsky carried the failed try's key; each target has its own.
+	if k := bsky.Tried[0].IdempotencyKey; k == "" || bsky.Tried[1].IdempotencyKey != k || main.Tried[0].IdempotencyKey == k {
+		t.Fatalf("keys: main %q, bsky %q %q", main.Tried[0].IdempotencyKey, k, bsky.Tried[1].IdempotencyKey)
+	}
 	// The admin list carries the length limit the compose box counts against.
 	if w := h.Admin("GET", "/api/b/microblog/posts", nil); !strings.Contains(w.Body.String(), `"maxBodyChars":500`) {
 		t.Fatalf("list lacks the limit: %s", w.Body.String())

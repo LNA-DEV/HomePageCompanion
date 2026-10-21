@@ -2,6 +2,8 @@ package autoupload
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"strings"
@@ -117,6 +119,7 @@ func (c *Connection) publishItem(ctx context.Context, item feed.Item, lim social
 		c.recordSkip(item, lim.Platform, reason)
 		return publishResult{skipped: true}, nil
 	}
+	post.IdempotencyKey = c.idempotencyKey(item.ID)
 	res, err := c.Target.Publish(ctx, post)
 	if errors.Is(err, social.ErrNeedsImage) {
 		c.recordSkip(item, lim.Platform, "needs an image")
@@ -130,6 +133,16 @@ func (c *Connection) publishItem(ctx context.Context, item feed.Item, lim social
 	c.ctx.Log().Printf("%s: published %s on %s: %s", c.name(), item.ID, c.TargetID, res.URL)
 	c.recordSuccess(ctx, item, lim.Platform, source, res)
 	return publishResult{url: res.URL}, nil
+}
+
+// idempotencyKey is the same for every try of an item on this target
+// until it was published; allowing a repost leads to a new one, because
+// the earlier success stays in the attempts.
+func (c *Connection) idempotencyKey(itemID string) string {
+	var published int64
+	c.ctx.DB().Model(&Attempt{}).Where("item_id = ? AND target = ? AND success = ?", itemID, c.TargetID, true).Count(&published)
+	sum := sha256.Sum256([]byte(fmt.Sprintf("autoupload\x00%s\x00%s\x00%d", c.TargetID, itemID, published)))
+	return hex.EncodeToString(sum[:16])
 }
 
 // buildPost composes the post. A non-empty reason means the item is skipped
