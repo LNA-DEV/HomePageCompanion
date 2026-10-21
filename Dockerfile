@@ -1,13 +1,14 @@
 # The companion in one container: the admin shell, the core and every module
 # of build.yaml (docs/concepts/modular-architecture.md §5.6).
 
-# The admin shell.
+# The admin shell and the module UIs, with one toolchain.
 FROM node:22-alpine AS shell
 WORKDIR /web
 COPY web/package*.json ./
 RUN npm ci
 COPY web/ ./
-RUN npm run build
+COPY modules/ /modules/
+RUN npm run build && node scripts/build-modules.mjs --out /ui
 
 # The program: hpc build against this checkout.
 FROM golang:1.26 AS build
@@ -17,7 +18,8 @@ COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
 COPY --from=shell /web/build /shell
-RUN go run ./cmd/hpc build -f build.yaml -o /out/companion --shell /shell --work /tmp/hpc --version "${VERSION}"
+COPY --from=shell /ui /ui
+RUN go run ./cmd/hpc build -f build.yaml -o /out/companion --shell /shell --ui /ui --work /tmp/hpc --version "${VERSION}"
 
 # glibc for SQLite, CA certificates and time zones; nothing else.
 FROM gcr.io/distroless/base-debian12

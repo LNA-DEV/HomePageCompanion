@@ -34,7 +34,7 @@ func init() {
 		Import:   importLegacy,
 		UI: &companion.UI{
 			Actions: []companion.Action{{Label: "Refresh token now", Endpoint: "tokens/refresh"}},
-			Widgets: []companion.Widget{{Element: "meta-token-widget", Size: "S", Title: "Instagram token"}},
+			Widgets: []companion.Widget{{Element: "instagram-token-widget", Size: "S", Title: "Instagram token"}},
 		},
 	})
 }

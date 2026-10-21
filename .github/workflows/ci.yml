@@ -65,10 +65,12 @@ jobs:
           cache: npm
           cache-dependency-path: web/package-lock.json
       - run: npm ci
-      - name: svelte-check
+      - name: svelte-check (shell and module UIs)
         run: npm run check
-      - name: build
+      - name: build the shell
         run: npm run build
+      - name: build the module UIs
+        run: npm run build:modules
 
   # One image: the shell, the core and every module of build.yaml. Built on
   # every push so a broken image is red too; pushed to GHCR from main and

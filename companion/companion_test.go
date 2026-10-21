@@ -3,9 +3,11 @@ package companion
 import (
 	"context"
 	"encoding/json"
+	"io/fs"
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"testing/fstest"
 	"time"
 )
 
@@ -113,5 +115,21 @@ func TestLegacyName(t *testing.T) {
 	}
 	if id := (LegacyTarget{Name: "Main Mastodon", Platform: "mastodon"}).InstanceID(); id != "mastodon:main-mastodon" {
 		t.Errorf("target instance %s", id)
+	}
+}
+
+type uiProbe struct{}
+
+func TestAttachUIByPackagePath(t *testing.T) {
+	info := Info{ID: "ui-probe", New: func() Instance { return new(uiProbe) }}
+	if UIFiles(info) != nil {
+		t.Fatal("files without any attached")
+	}
+	files := fstest.MapFS{"entry.js": {Data: []byte("x")}}
+	AttachUI("github.com/LNA-DEV/HomePageCompanion", fstest.MapFS{})
+	AttachUI("github.com/LNA-DEV/HomePageCompanion/companion", files)
+	got := UIFiles(info)
+	if b, err := fs.ReadFile(got, "entry.js"); err != nil || string(b) != "x" {
+		t.Fatalf("the longest matching path should win: %v", err)
 	}
 }

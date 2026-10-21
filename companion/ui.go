@@ -1,6 +1,11 @@
 package companion
 
-import "io/fs"
+import (
+	"io/fs"
+	"reflect"
+	"strings"
+	"sync"
+)
 
 // UI is a building block's admin UI. Files holds at least entry.js, which
 // registers the custom elements the manifest names; the shell loads it from
@@ -51,11 +56,20 @@ type Action struct {
 }
 
 // uiFiles lets a hpc build attach UI files to a module that does not embed
-// them itself.
-var uiFiles = map[string]fs.FS{}
+// them itself, by the module's path.
+var (
+	uiMu    sync.RWMutex
+	uiFiles = map[string]fs.FS{}
+)
 
-// AttachUI is called by a generated main for every module whose UI hpc built.
-func AttachUI(id string, files fs.FS) { uiFiles[id] = files }
+// AttachUI is called by a generated main for every module whose UI hpc
+// built; path is the module's path (the package path of its Info.New
+// type, or a prefix of it).
+func AttachUI(path string, files fs.FS) {
+	uiMu.Lock()
+	uiFiles[strings.TrimSuffix(path, "/")] = files
+	uiMu.Unlock()
+}
 
 // UIFiles returns the UI files of a building block: its own, else the
 // attached ones.
@@ -63,5 +77,39 @@ func UIFiles(info Info) fs.FS {
 	if info.UI != nil && info.UI.Files != nil {
 		return info.UI.Files
 	}
-	return uiFiles[info.ID]
+	uiMu.RLock()
+	defer uiMu.RUnlock()
+	if f, ok := uiFiles[info.ID]; ok {
+		return f
+	}
+	pkg := pkgPathOf(info)
+	best, files := "", fs.FS(nil)
+	for path, f := range uiFiles {
+		if (pkg == path || strings.HasPrefix(pkg, path+"/")) && len(path) > len(best) {
+			best, files = path, f
+		}
+	}
+	return files
+}
+
+var pkgPaths sync.Map // ID → package path
+
+// pkgPathOf is the package path of the type Info.New returns.
+func pkgPathOf(info Info) string {
+	if p, ok := pkgPaths.Load(info.ID); ok {
+		return p.(string)
+	}
+	if info.New == nil {
+		return ""
+	}
+	t := reflect.TypeOf(info.New())
+	for t != nil && t.Kind() == reflect.Pointer {
+		t = t.Elem()
+	}
+	p := ""
+	if t != nil {
+		p = t.PkgPath()
+	}
+	pkgPaths.Store(info.ID, p)
+	return p
 }

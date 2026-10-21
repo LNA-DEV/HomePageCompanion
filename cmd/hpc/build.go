@@ -191,21 +191,37 @@ package main
 import (
 	"embed"
 	"io/fs"
+	"strings"
 
 	"github.com/LNA-DEV/HomePageCompanion/core"
 `)
 	for _, path := range paths {
 		fmt.Fprintf(&mg, "\t_ %q\n", path)
 	}
-	mg.WriteString(`)
+	mg.WriteString(`	"github.com/LNA-DEV/HomePageCompanion/companion"
+)
 
 //go:embed all:shell
 var shell embed.FS
+
+// ui holds the built module UIs, one folder per module path with "/" as
+// "__".
+//
+//go:embed all:ui
+var ui embed.FS
 
 func main() {
 	if sub, err := fs.Sub(shell, "shell"); err == nil {
 		if _, err := fs.Stat(sub, "index.html"); err == nil {
 			core.SetShell(sub)
+		}
+	}
+	entries, _ := fs.ReadDir(ui, "ui")
+	for _, e := range entries {
+		if e.IsDir() {
+			if sub, err := fs.Sub(ui, "ui/"+e.Name()); err == nil {
+				companion.AttachUI(strings.ReplaceAll(e.Name(), "__", "/"), sub)
+			}
 		}
 	}
 	core.Main()
@@ -222,6 +238,8 @@ type BuildOptions struct {
 	Work    string // work directory (kept); default: a temporary one
 	Shell   string // a built shell to embed; "" builds <core>/web when the core is local
 	NoShell bool
+	UI      string // built module UIs (web/scripts/build-modules.mjs --out); "" builds them
+	NoUI    bool
 	Version string // stamped into the program; default: the core's version or the commit of a local core
 	Log     io.Writer
 }
@@ -321,20 +339,25 @@ func build(o BuildOptions) error {
 	default:
 		fmt.Fprintln(log, "hpc: remote core: pass --shell with a built shell; serving a placeholder")
 	}
-	// Module UIs that are local and come with sources are built in place;
-	// the module embeds ui/dist itself.
-	for _, m := range mods {
-		dir := m.Dir
-		if d, own := ownModule(m.Path); own && dir == "" && isLocal(bf.Core) && m.Version == "" {
-			dir = filepath.Join(bf.Core, "modules", d)
+	// The module UIs: built ones, or built here with the core's toolchain.
+	uiDir := filepath.Join(work, "ui")
+	os.RemoveAll(uiDir)
+	if err := os.MkdirAll(uiDir, 0o755); err != nil {
+		return err
+	}
+	if err := os.WriteFile(filepath.Join(uiDir, ".hpc"), []byte("built by hpc\n"), 0o644); err != nil {
+		return err
+	}
+	switch {
+	case o.NoUI:
+		fmt.Fprintln(log, "hpc: no module UIs")
+	case o.UI != "":
+		if err := copyTree(o.UI, uiDir); err != nil {
+			return fmt.Errorf("module UIs: %w", err)
 		}
-		if dir == "" || o.NoShell {
-			continue
-		}
-		if _, err := os.Stat(filepath.Join(dir, "ui", "package.json")); err == nil {
-			if err := npmBuild(filepath.Join(dir, "ui"), log); err != nil {
-				return fmt.Errorf("%s ui: %w", m.Path, err)
-			}
+	default:
+		if err := buildModuleUIs(bf, mods, work, env, uiDir, log); err != nil {
+			return fmt.Errorf("module UIs: %w (or pass --ui or --no-ui)", err)
 		}
 	}
 
@@ -403,6 +426,89 @@ func gitVersion(dir string) string {
 	return strings.TrimPrefix(strings.TrimSpace(string(b)), "v")
 }
 
+// buildModuleUIs builds the UIs of the modules that have ui/src/entry.ts
+// with the core's web toolchain (web/scripts/build-modules.mjs).
+func buildModuleUIs(bf *BuildFile, mods []Module, work string, env []string, out string, log io.Writer) error {
+	var dirs []string
+	for _, m := range mods {
+		dir := m.Dir
+		if d, own := ownModule(m.Path); dir == "" && own && isLocal(bf.Core) && m.Version == "" {
+			dir = filepath.Join(bf.Core, "modules", d)
+		}
+		if dir == "" {
+			var err error
+			if dir, err = moduleDir(work, env, m.Path); err != nil {
+				return err
+			}
+		}
+		if hasUI(dir) {
+			dirs = append(dirs, dir)
+		}
+	}
+	if len(dirs) == 0 {
+		return nil
+	}
+	web := ""
+	if isLocal(bf.Core) {
+		web = filepath.Join(bf.Core, "web")
+	} else {
+		// The module cache is read only: the toolchain is copied out.
+		dir, err := moduleDir(work, env, corePath)
+		if err != nil {
+			return err
+		}
+		web = filepath.Join(work, "web")
+		os.RemoveAll(web)
+		if err := copyTree(filepath.Join(dir, "web"), web); err != nil {
+			return err
+		}
+	}
+	if _, err := os.Stat(filepath.Join(web, "node_modules")); err != nil {
+		if err := npmRun(web, log, "ci"); err != nil {
+			return err
+		}
+	}
+	args := append([]string{filepath.Join(web, "scripts", "build-modules.mjs"), "--out", out}, dirs...)
+	fmt.Fprintf(log, "hpc: building %d module UI(s)\n", len(dirs))
+	cmd := exec.Command("node", args...)
+	cmd.Dir, cmd.Stdout, cmd.Stderr = web, log, log
+	return cmd.Run()
+}
+
+func hasUI(dir string) bool {
+	for _, name := range []string{"entry.ts", "entry.js"} {
+		if _, err := os.Stat(filepath.Join(dir, "ui", "src", name)); err == nil {
+			return true
+		}
+	}
+	return false
+}
+
+// moduleDir is where the go command keeps a required module.
+func moduleDir(work string, env []string, path string) (string, error) {
+	cmd := exec.Command("go", "list", "-m", "-json", path)
+	cmd.Dir, cmd.Env = work, env
+	b, err := cmd.Output()
+	if err != nil {
+		return "", fmt.Errorf("go list %s: %w", path, err)
+	}
+	var m struct{ Dir string }
+	if err := json.Unmarshal(b, &m); err != nil || m.Dir == "" {
+		return "", fmt.Errorf("go list %s: no directory", path)
+	}
+	return m.Dir, nil
+}
+
+func npmRun(dir string, log io.Writer, args ...string) error {
+	if _, err := exec.LookPath("npm"); err != nil {
+		return errors.New("npm is not installed")
+	}
+	fmt.Fprintf(log, "hpc: npm %s (%s)\n", strings.Join(args, " "), dir)
+	cmd := exec.Command("npm", args...)
+	cmd.Dir, cmd.Stdout, cmd.Stderr = dir, log, log
+	return cmd.Run()
+}
+
 func npmBuild(dir string, log io.Writer) error {
 	if _, err := exec.LookPath("npm"); err != nil {
 		return errors.New("npm is not installed")
@@ -426,6 +532,9 @@ func copyTree(src, dst string) error {
 		rel, _ := filepath.Rel(src, p)
 		target := filepath.Join(dst, rel)
 		if d.IsDir() {
+			if d.Name() == "node_modules" {
+				return filepath.SkipDir
+			}
 			return os.MkdirAll(target, 0o755)
 		}
 		b, err := os.ReadFile(p)
@@ -451,6 +560,8 @@ func buildCmd(args []string) error {
 	fl.StringVar(&o.Work, "work", "", "work directory to keep (default: a temporary one)")
 	fl.StringVar(&o.Shell, "shell", "", "a built admin shell to embed (default: build <core>/web of a local core)")
 	fl.BoolVar(&o.NoShell, "no-shell", false, "embed no shell")
+	fl.StringVar(&o.UI, "ui", "", "built module UIs to embed (default: build them with the core's web toolchain)")
+	fl.BoolVar(&o.NoUI, "no-ui", false, "embed no module UIs")
 	fl.StringVar(&o.Version, "version", "", "the version to stamp (default: the core's)")
 	if err := fl.Parse(args); err != nil {
 		return err

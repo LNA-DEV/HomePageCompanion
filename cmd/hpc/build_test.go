@@ -108,9 +108,13 @@ func TestBuildsAndRunsACompanion(t *testing.T) {
 	shell := filepath.Join(dir, "shell")
 	os.MkdirAll(shell, 0o755)
 	os.WriteFile(filepath.Join(shell, "index.html"), []byte("<!doctype html><title>shell</title>"), 0o644)
+	// A built module UI, as web/scripts/build-modules.mjs leaves it.
+	ui := filepath.Join(dir, "ui", "github.com__LNA-DEV__HomePageCompanion__modules__webmention")
+	os.MkdirAll(ui, 0o755)
+	os.WriteFile(filepath.Join(ui, "entry.js"), []byte("/* webmention ui */"), 0o644)
 	bin := filepath.Join(dir, "companion")
 	var log bytes.Buffer
-	if err := build(BuildOptions{File: bp, Out: bin, Shell: shell, Version: "9.9.9", Log: &log}); err != nil {
+	if err := build(BuildOptions{File: bp, Out: bin, Shell: shell, UI: filepath.Dir(ui), Version: "9.9.9", Log: &log}); err != nil {
 		t.Fatalf("%v\n%s", err, log.String())
 	}
 
@@ -152,6 +156,19 @@ func TestBuildsAndRunsACompanion(t *testing.T) {
 			t.Fatalf("not up: %v\n%s", err, run.String())
 		}
 		time.Sleep(100 * time.Millisecond)
+	}
+	// The module UI is attached by its module path and served to the admin.
+	req, _ := http.NewRequest("GET", "http://127.0.0.1:18089/ui/b/webmention/entry.js", nil)
+	req.Header.Set("Authorization", "ApiKey k")
+	if resp, err := http.DefaultClient.Do(req); err != nil || resp.StatusCode != 200 {
+		t.Fatalf("module UI: %v %v", err, resp)
+	} else {
+		var b bytes.Buffer
+		b.ReadFrom(resp.Body)
+		resp.Body.Close()
+		if b.String() != "/* webmention ui */" {
+			t.Fatalf("module UI %q", b.String())
+		}
 	}
 	resp, err := http.Post("http://127.0.0.1:18089/api/webmention", "application/x-www-form-urlencoded",
 		strings.NewReader("source=https://a.example/x&target=https://b.example/"))

@@ -50,3 +50,7 @@ src/data/trips/**
 # The old installation the migration's end-to-end test moves over.
 !e2e/testdata/legacy/.env
 !e2e/testdata/legacy/companion.db
+
+# Module UIs, staged and built by web/scripts/build-modules.mjs
+web/.modules/
+web/build-modules/

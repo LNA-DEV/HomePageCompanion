@@ -33,7 +33,7 @@ func init() {
 		Import:   importLegacy,
 		UI: &companion.UI{
 			Actions: []companion.Action{{Label: "Refresh token now", Endpoint: "tokens/refresh"}},
-			Widgets: []companion.Widget{{Element: "meta-token-widget", Size: "S", Title: "Threads token"}},
+			Widgets: []companion.Widget{{Element: "threads-token-widget", Size: "S", Title: "Threads token"}},
 		},
 	})
 }
