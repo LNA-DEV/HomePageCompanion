@@ -380,7 +380,7 @@ func refID(ref string) string {
 
 // migrateCore creates the core's own tables.
 func (c *Core) migrateCore() error {
-	return c.db.AutoMigrate(&eventRow{}, &deliveryRow{}, &jobRun{}, &secretRow{}, &sessionRow{}, &metaRow{})
+	return c.db.AutoMigrate(&eventRow{}, &deliveryRow{}, &jobRun{}, &secretRow{}, &sessionRow{}, &metaRow{}, &serviceDocument{})
 }
 
 func (c *Core) startInstance(in *instance) error {

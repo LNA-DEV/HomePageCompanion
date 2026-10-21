@@ -846,6 +846,7 @@ func (m *serviceManager) coreAPI(w http.ResponseWriter, r *http.Request) {
 		m.serviceLogs(w, r, b)
 	case rest == "metrics" && r.Method == http.MethodPost:
 		m.serviceMetrics(w, r, b)
+	case m.serviceStorage(w, r, b, rest):
 	case strings.HasPrefix(rest, "secrets/"):
 		m.serviceSecret(w, r, b, strings.TrimPrefix(rest, "secrets/"))
 	case rest == "events" && r.Method == http.MethodPost:

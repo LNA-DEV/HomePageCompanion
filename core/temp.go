@@ -16,6 +16,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/LNA-DEV/HomePageCompanion/companion"
 	"github.com/gin-gonic/gin"
 )
 
@@ -146,11 +147,21 @@ func (c *Core) localFetch(ctx context.Context, raw string) ([]byte, string, bool
 	if err != nil {
 		return nil, "", false, nil
 	}
-	name, ok := strings.CutPrefix(u.Path, tempPath)
-	if !ok || strings.Contains(name, "/") {
+	if pub := c.cfg().Core.PublicURL; pub != "" && !strings.HasPrefix(raw, strings.TrimSuffix(pub, "/")) {
 		return nil, "", false, nil
 	}
-	if pub := c.cfg().Core.PublicURL; pub != "" && !strings.HasPrefix(raw, strings.TrimSuffix(pub, "/")) {
+	// A signed blob URL (blob-urls of a service).
+	if full, ok := strings.CutPrefix(u.Path, blobPath); ok {
+		rc, info, err := c.openSignedBlob(ctx, full, u.Query().Get("exp"), u.Query().Get("sig"))
+		if err != nil {
+			return nil, "", true, err
+		}
+		defer rc.Close()
+		b, err := io.ReadAll(io.LimitReader(rc, companion.MaxFetchBytes))
+		return b, info.ContentType, true, err
+	}
+	name, ok := strings.CutPrefix(u.Path, tempPath)
+	if !ok || strings.Contains(name, "/") {
 		return nil, "", false, nil
 	}
 	b, ct, err := c.temp.open(ctx, name, u.Query().Get("exp"), u.Query().Get("sig"))

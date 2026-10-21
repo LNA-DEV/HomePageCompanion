@@ -23,10 +23,6 @@ import (
 	"gorm.io/gorm/logger"
 )
 
-// ErrUnavailable is returned by the parts of the context a service does
-// not have.
-var ErrUnavailable = errors.New("not available to a service")
-
 // modCtx is the building block's companion.ModuleContext inside a service:
 // its own database in the volume, everything else through the core.
 type modCtx struct {
@@ -92,9 +88,6 @@ func (m *modCtx) DB() *gorm.DB {
 	})
 	return m.db
 }
-
-func (m *modCtx) Blobs() companion.Bucket   { return unavailableBucket{} }
-func (m *modCtx) Temp() companion.TempStore { return unavailableTemp{} }
 
 // Secrets is the service's part of the core's secret store.
 func (m *modCtx) Secrets() companion.Secrets { return coreSecrets{m} }
@@ -336,44 +329,3 @@ type instCtx struct {
 
 func (i *instCtx) InstanceName() string { return i.name }
 func (i *instCtx) InstanceID() string   { return companion.InstanceID(i.s.info.ID, i.name) }
-
-// Until the core's blob API for services exists, these parts are
-// unavailable.
-type unavailableBucket struct{}
-
-func (unavailableBucket) Put(context.Context, string, io.Reader, int64, string) error {
-	return ErrUnavailable
-}
-func (unavailableBucket) Get(context.Context, string) (io.ReadCloser, companion.ObjectInfo, error) {
-	return nil, companion.ObjectInfo{}, ErrUnavailable
-}
-func (unavailableBucket) ReadRange(context.Context, string, int64, int64) ([]byte, error) {
-	return nil, ErrUnavailable
-}
-func (unavailableBucket) Stat(context.Context, string) (companion.ObjectInfo, error) {
-	return companion.ObjectInfo{}, ErrUnavailable
-}
-func (unavailableBucket) List(context.Context, string) ([]companion.ObjectInfo, error) {
-	return nil, ErrUnavailable
-}
-func (unavailableBucket) Delete(context.Context, string) error { return ErrUnavailable }
-func (unavailableBucket) CreateUpload(context.Context, string, string) (string, error) {
-	return "", ErrUnavailable
-}
-func (unavailableBucket) UploadPart(context.Context, string, string, int32, []byte) (string, error) {
-	return "", ErrUnavailable
-}
-func (unavailableBucket) CompleteUpload(context.Context, string, string, []companion.CompletedPart) error {
-	return ErrUnavailable
-}
-func (unavailableBucket) AbortUpload(context.Context, string, string) error { return ErrUnavailable }
-func (unavailableBucket) ListUploads(context.Context, string) ([]companion.Upload, error) {
-	return nil, ErrUnavailable
-}
-func (unavailableBucket) Prefix() string { return "" }
-
-type unavailableTemp struct{}
-
-func (unavailableTemp) Put(context.Context, []byte, string, time.Duration) (string, error) {
-	return "", ErrUnavailable
-}

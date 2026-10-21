@@ -121,6 +121,7 @@ func (c *Core) rebuildGateway() error {
 		c.metrics.write(g.Writer)
 	})
 	r.GET(tempPath+":name", c.temp.serve)
+	r.GET(blobPath+"*key", c.serveSignedBlob)
 	c.coreAPI(r.Group("/api/core"))
 
 	c.mu.RLock()

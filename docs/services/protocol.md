@@ -102,6 +102,12 @@ instances whose config did not change running.
 | `POST /core/v1/slots/<slot>/<operation>` | an operation on an instance connected to one of your slots, with `Companion-Instance` (yours) and, when several are connected, `Companion-Target` (theirs); bodies as in the capability's OpenAPI file |
 | `GET /core/v1/slots` | your instance's connections |
 | `GET`, `PUT {"value"}`, `DELETE /core/v1/secrets/<name>` | your part of the core's encrypted secret store (refreshed tokens) |
+| `GET`, `PUT` (JSON), `DELETE /core/v1/data/<collection>/<id>`; `GET /core/v1/data/<collection>?prefix=&after=&limit=` | your JSON documents (at most 1 MiB each), in the core's database and so in every backup |
+| `GET` (with `Range`), `HEAD`, `PUT`, `DELETE /core/v1/blobs/<key>`; `GET /core/v1/blobs?prefix=` | your files, in the blob store under `services/<block>/` |
+| `POST /core/v1/uploads` `{"key", "contentType"}`, `PUT /core/v1/uploads/<id>/<n>?key=`, `POST …/<id>/complete` `{"key", "parts"}`, `DELETE …/<id>?key=` | large files in parts |
+| `POST /core/v1/blob-urls` `{"key", "ttl"}` | a signed public URL of one of your files, to hand to a platform (at most a week) |
+| `POST /core/v1/temp?ttl=` (the file as the body) | a short-lived file and its URL, at most a day |
+| `GET /core/v1/fetch?url=` | the file behind one of the core's own URLs (an image of a post you are to publish): you cannot reach the companion's public address, and need no egress for it |
 | `POST /core/v1/events` | `{"type", "data"}`: emit an event, delivered like a module's |
 | `POST /core/v1/logs` | `{"lines": [{"level", "message", "instance"}]}`: lines for the admin UI's log, besides your stdout |
 | `POST /core/v1/metrics` | `{"values": [{"name", "value", "kind": "add" or "set", "labels"}]}`: your own values in `/metrics` |

@@ -347,6 +347,8 @@ Today's public URLs stay as aliases: `/api/tiles/basemap/*` → `basemap`, `/api
 
 **Secret store.** The core stores secrets created at runtime, encrypted and separated per module, with one key `COMPANION_SECRET_KEY` from `.env`, through the DB module: refreshed tokens (today `metatoken` with `TOKEN_ENCRYPTION_KEY`), OAuth tokens, the VAPID private key. SDK: `ctx.Secrets().Get/Put/Delete`; services from Stage 3 through `/core/v1/secrets/<name>`. What the operator types in, a token via `${VAR}`, stays in `.env`. `hpc secrets rotate` re-encrypts everything.
 
+As built (`core/servicedata.go`, `service/storage.go`): services store through `/core/v1/data/<collection>/<id>` (JSON documents in the core's own area, table `core_service_documents`) and `/core/v1/blobs/<key>` (the blob store under `services/<id>/`, ranges and multipart uploads included), both in every backup. `/core/v1/blob-urls` signs a public URL of a file for a platform that fetches it itself; `/core/v1/fetch` hands a service the file behind one of the core's own URLs, the temp URLs of images to post among them, since a service cannot reach the companion's public address. `/core/v1/secrets/<name>` is the secret store, apart from every module's. The Go SDK's `Blobs()`, `Temp()` and `Secrets()` use these, so a module behaves the same as a service; `media.image/v1` reaches a service through its slot with the image as the raw body.
+
 **Backup and restore.** `hpc backup` writes the whole state to one file, `hpc restore` brings it back; no module has to do anything for it.
 
 | Part | How |

@@ -19,6 +19,7 @@ import (
 	"testing/fstest"
 	"time"
 
+	"github.com/LNA-DEV/HomePageCompanion/capability/media"
 	"github.com/LNA-DEV/HomePageCompanion/capability/notify"
 	"github.com/LNA-DEV/HomePageCompanion/capability/social"
 	"github.com/LNA-DEV/HomePageCompanion/companion"
@@ -34,6 +35,7 @@ import (
 type remote struct {
 	Platform string          `json:"platform"`
 	Notify   notify.Notifier `companion:"slot=notify"`
+	Media    media.Image     `companion:"slot=media"`
 
 	mu     sync.Mutex
 	posted []social.Post
@@ -113,11 +115,33 @@ var remoteInfo = companion.Info{
 	Name:       "Remote",
 	New:        func() companion.Instance { return new(remote) },
 	Provides:   []companion.Capability{social.PublisherV1},
-	Slots:      []companion.Slot{{Name: "notify", Needs: notify.NotifyV1, Optional: true}},
+	Slots:      []companion.Slot{{Name: "notify", Needs: notify.NotifyV1, Optional: true}, {Name: "media", Needs: media.ImageV1, Optional: true}},
 	Subscribes: []string{"t.ping/v1"},
 	Routes: func(mc companion.ModuleContext, r *companion.Router) {
 		r.Admin.GET("/hello", func(g *gin.Context) { g.String(http.StatusOK, "hello from %s%s", mc.ModuleID(), g.Query("uiToken")) })
 		r.Public.GET("/open", func(g *gin.Context) { g.String(http.StatusOK, "open") })
+		// The SDK's blob store and temp files, which go through the core.
+		r.Admin.POST("/storage", func(g *gin.Context) {
+			if err := storageRoundTrip(g.Request.Context(), mc); err != nil {
+				g.String(http.StatusInternalServerError, err.Error())
+				return
+			}
+			g.String(http.StatusOK, "ok")
+		})
+		// media.image/v1 through the service's slot: binary bodies.
+		r.Admin.POST("/resize", func(g *gin.Context) {
+			remotesMu.Lock()
+			rm := remotes["main"]
+			remotesMu.Unlock()
+			out, err := rm.Media.Resize(g.Request.Context(), []byte("jpeg bytes"), media.Limits{MaxLongEdge: 1024})
+			if err != nil {
+				g.String(http.StatusInternalServerError, err.Error())
+				return
+			}
+			// The fake reads no metadata: its error comes back as itself.
+			_, err = rm.Media.ReadExif(g.Request.Context(), out)
+			g.String(http.StatusOK, "%s|%v", out, err)
+		})
 	},
 	UI: &companion.UI{
 		Files: fstest.MapFS{"index.html": {Data: []byte("<p>remote ui</p>")}, "app.js": {Data: []byte("console.log(1)")}},
@@ -221,6 +245,7 @@ func waitRunning(t *testing.T, h *companiontest.Harness, id string, want bool) c
 const remoteConfig = `
 modules:
   fake.notifier: { instances: { main: {} } }
+  fake.media: { instances: { main: {} } }
   t.consumer:
     instances:
       a: { greeting: hello, target: remote:main }
@@ -229,7 +254,7 @@ services:
     url: SERVICE_URL
     grants: { events: [t.ping/v1], public: true }
     instances:
-      main: { platform: lemmy, notify: fake.notifier:main }
+      main: { platform: lemmy, notify: fake.notifier:main, media: fake.media:main }
 `
 
 var allGrants = wire.Grants{Events: []string{"t.ping/v1"}, Public: true, Volume: true}
@@ -711,5 +736,193 @@ func TestServiceUI(t *testing.T) {
 	// In the query (an <img> of the UI), taken out before the service.
 	if w := h.Public("GET", "/api/b/remote/hello?uiToken="+tok.Token, nil); w.Code != 200 || w.Body.String() != "hello from remote" {
 		t.Fatalf("?uiToken=: %d %q", w.Code, w.Body.String())
+	}
+}
+
+// storageRoundTrip uses the blob store and the temp files the way a module
+// does, from inside a service.
+func storageRoundTrip(ctx context.Context, mc companion.ModuleContext) error {
+	b := mc.Blobs()
+	if err := b.Put(ctx, "photos/a.txt", strings.NewReader("hello blob"), 10, "text/plain"); err != nil {
+		return fmt.Errorf("put: %w", err)
+	}
+	rc, info, err := b.Get(ctx, "photos/a.txt")
+	if err != nil {
+		return fmt.Errorf("get: %w", err)
+	}
+	got, _ := io.ReadAll(rc)
+	rc.Close()
+	if string(got) != "hello blob" || info.Size != 10 || info.ContentType != "text/plain" {
+		return fmt.Errorf("get: %q %+v", got, info)
+	}
+	if part, err := b.ReadRange(ctx, "photos/a.txt", 6, 4); err != nil || string(part) != "blob" {
+		return fmt.Errorf("range: %q %v", part, err)
+	}
+	if st, err := b.Stat(ctx, "photos/a.txt"); err != nil || st.Size != 10 {
+		return fmt.Errorf("stat: %+v %v", st, err)
+	}
+	if objs, err := b.List(ctx, "photos/"); err != nil || len(objs) != 1 || objs[0].Key != "photos/a.txt" {
+		return fmt.Errorf("list: %+v %v", objs, err)
+	}
+	// A large file in parts.
+	id, err := b.CreateUpload(ctx, "big.bin", "application/octet-stream")
+	if err != nil {
+		return fmt.Errorf("create upload: %w", err)
+	}
+	if ups, err := b.ListUploads(ctx, ""); err != nil || len(ups) != 1 {
+		return fmt.Errorf("list uploads: %+v %v", ups, err)
+	}
+	e1, err := b.UploadPart(ctx, "big.bin", id, 1, []byte("part one, "))
+	if err != nil {
+		return fmt.Errorf("part 1: %w", err)
+	}
+	e2, err := b.UploadPart(ctx, "big.bin", id, 2, []byte("part two"))
+	if err != nil {
+		return fmt.Errorf("part 2: %w", err)
+	}
+	if err := b.CompleteUpload(ctx, "big.bin", id, []companion.CompletedPart{{Number: 1, ETag: e1}, {Number: 2, ETag: e2}}); err != nil {
+		return fmt.Errorf("complete: %w", err)
+	}
+	if part, _ := b.ReadRange(ctx, "big.bin", 0, 18); string(part) != "part one, part two" {
+		return fmt.Errorf("uploaded: %q", part)
+	}
+	if err := b.Delete(ctx, "photos/a.txt"); err != nil {
+		return fmt.Errorf("delete: %w", err)
+	}
+	if _, err := b.Stat(ctx, "photos/a.txt"); !errors.Is(err, companion.ErrNotFound) {
+		return fmt.Errorf("deleted, stat: %v", err)
+	}
+	u, err := mc.Temp().Put(ctx, []byte("for publish"), "text/plain", time.Hour)
+	if err != nil || !strings.Contains(u, "/api/core/tmp/") {
+		return fmt.Errorf("temp: %q %v", u, err)
+	}
+	return nil
+}
+
+// A service stores through the core, each in its own area: documents in
+// the core's database, files in the blob store under services/<id>/; it
+// fetches the core's own URLs through the core.
+func TestServiceStorage(t *testing.T) {
+	rs := startRemote(t, allGrants, remoteConfig)
+	h := rs.h
+	waitRunning(t, h, "remote:main", true)
+	tok := rs.token(t)
+	call := func(method, path, body string, header ...string) (int, string, http.Header) {
+		t.Helper()
+		req, _ := http.NewRequest(method, "http://"+rs.addr+path, strings.NewReader(body))
+		req.Header.Set("Authorization", "Bearer "+tok)
+		for i := 0; i+1 < len(header); i += 2 {
+			req.Header.Set(header[i], header[i+1])
+		}
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		b, _ := io.ReadAll(resp.Body)
+		return resp.StatusCode, string(b), resp.Header
+	}
+
+	// Documents.
+	for i, id := range []string{"post-1", "post-2", "post-3", "draft-1"} {
+		if code, _, _ := call("PUT", "/core/v1/data/posts/"+id, fmt.Sprintf(`{"n":%d}`, i)); code != 200 {
+			t.Fatalf("put %s: %d", id, code)
+		}
+	}
+	if code, body, _ := call("GET", "/core/v1/data/posts/post-2", ""); code != 200 || !strings.Contains(body, `"data":{"n":1}`) {
+		t.Fatalf("get: %d %s", code, body)
+	}
+	call("PUT", "/core/v1/data/posts/post-2", `{"n":9}`)
+	if _, body, _ := call("GET", "/core/v1/data/posts/post-2", ""); !strings.Contains(body, `"n":9`) {
+		t.Fatalf("replaced: %s", body)
+	}
+	// Another service's document stays out of the list.
+	h.Core.DB().Exec("INSERT INTO core_service_documents (service, collection, doc_id, data, updated_at) VALUES ('other', 'posts', 'post-9', '{}', CURRENT_TIMESTAMP)")
+	var page struct {
+		Items []struct {
+			ID string `json:"id"`
+		} `json:"items"`
+		Next string `json:"next"`
+	}
+	_, body, _ := call("GET", "/core/v1/data/posts?prefix=post-&limit=2", "")
+	json.Unmarshal([]byte(body), &page)
+	if len(page.Items) != 2 || page.Items[0].ID != "post-1" || page.Next != "post-2" {
+		t.Fatalf("first page: %s", body)
+	}
+	_, body, _ = call("GET", "/core/v1/data/posts?prefix=post-&after="+page.Next, "")
+	page.Next = ""
+	json.Unmarshal([]byte(body), &page)
+	if len(page.Items) != 1 || page.Items[0].ID != "post-3" || page.Next != "" {
+		t.Fatalf("second page: %s", body)
+	}
+	if code, _, _ := call("PUT", "/core/v1/data/posts/x", "not json"); code != http.StatusBadRequest {
+		t.Fatalf("not JSON: %d", code)
+	}
+	if code, _, _ := call("PUT", "/core/v1/data/../secrets", "{}"); code == 200 {
+		t.Fatal("a path out of the collection")
+	}
+	call("DELETE", "/core/v1/data/posts/post-1", "")
+	if code, _, _ := call("GET", "/core/v1/data/posts/post-1", ""); code != http.StatusNotFound {
+		t.Fatalf("deleted: %d", code)
+	}
+
+	// Files, over HTTP and through the SDK.
+	if code, _, _ := call("PUT", "/core/v1/blobs/img/a.jpg", "jpegdata", "Content-Type", "image/jpeg"); code != http.StatusNoContent {
+		t.Fatalf("put blob: %d", code)
+	}
+	if code, body, hdr := call("GET", "/core/v1/blobs/img/a.jpg", "", "Range", "bytes=4-"); code != http.StatusPartialContent || body != "data" || hdr.Get("Content-Range") != "bytes 4-7/8" {
+		t.Fatalf("range: %d %q %v", code, body, hdr)
+	}
+	blob := companiontest.Instance[*companiontest.MemBlob](h, companiontest.BlobID+":default")
+	found := false
+	for _, k := range blob.Keys() {
+		found = found || strings.HasSuffix(k, "services/remote/img/a.jpg")
+	}
+	if !found {
+		t.Fatalf("not in the service's area: %v", blob.Keys())
+	}
+	for _, bad := range []string{"/core/v1/blobs/../t.consumer/x", "/core/v1/blobs/a//b", "/core/v1/blobs/.hidden/.."} {
+		if code, _, _ := call("PUT", bad, "x"); code == http.StatusNoContent {
+			t.Errorf("%s accepted", bad)
+		}
+	}
+	if w := h.Admin("POST", "/api/b/remote/storage", nil); w.Code != 200 {
+		t.Fatalf("the SDK's storage: %d %s", w.Code, w.Body.String())
+	}
+
+	// A signed URL for someone else, and the core's URLs for the service.
+	code, body, _ := call("POST", "/core/v1/blob-urls", `{"key":"img/a.jpg","ttl":600}`)
+	var su struct{ URL string }
+	json.Unmarshal([]byte(body), &su)
+	if code != 200 || !strings.HasPrefix(su.URL, "http://companion.test/api/core/blob/services/remote/img/a.jpg?") {
+		t.Fatalf("signed URL: %d %s", code, body)
+	}
+	path := strings.TrimPrefix(su.URL, "http://companion.test")
+	if w := h.Public("GET", path, nil); w.Code != 200 || w.Body.String() != "jpegdata" {
+		t.Fatalf("the signed URL: %d %q", w.Code, w.Body.String())
+	}
+	if w := h.Public("GET", strings.Replace(path, "sig=", "sig=0", 1), nil); w.Code != http.StatusNotFound {
+		t.Fatalf("a forged signature: %d", w.Code)
+	}
+	if code, body, _ := call("GET", "/core/v1/fetch?url="+url.QueryEscape(su.URL), ""); code != 200 || body != "jpegdata" {
+		t.Fatalf("fetch a signed URL: %d %q", code, body)
+	}
+	code, body, _ = call("POST", "/core/v1/temp?ttl=60", "temp bytes", "Content-Type", "text/plain")
+	var tu struct{ URL string }
+	json.Unmarshal([]byte(body), &tu)
+	if code, got, _ := call("GET", "/core/v1/fetch?url="+url.QueryEscape(tu.URL), ""); code != 200 || got != "temp bytes" {
+		t.Fatalf("fetch a temp URL: %d %q (%s)", code, got, body)
+	}
+	if code, _, _ := call("GET", "/core/v1/fetch?url="+url.QueryEscape("https://example.com/a.jpg"), ""); code != http.StatusForbidden {
+		t.Fatalf("fetch an outside URL: %d", code)
+	}
+}
+
+// media.image/v1 for services: binary bodies through the slot.
+func TestServiceUsesMedia(t *testing.T) {
+	rs := startRemote(t, allGrants, remoteConfig)
+	waitRunning(t, rs.h, "remote:main", true)
+	if w := rs.h.Admin("POST", "/api/b/remote/resize", nil); w.Code != 200 || w.Body.String() != "jpeg bytes|fake: no metadata" {
+		t.Fatalf("resize and exif through the slot: %d %q", w.Code, w.Body.String())
 	}
 }

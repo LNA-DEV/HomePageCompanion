@@ -85,6 +85,9 @@ func Serve(info companion.Info) {
 	if err != nil {
 		log.Fatal(err)
 	}
+	// In its own process, companion.Fetch gets the core's URLs (images to
+	// post) through the core.
+	companion.SetLocalFetcher(s.mc.fetchLocal)
 	if os.Getenv("COMPANION_MANIFEST") == "print" {
 		enc := json.NewEncoder(os.Stdout)
 		enc.SetIndent("", "  ")
