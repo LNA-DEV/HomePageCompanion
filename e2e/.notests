@@ -1,1 +1,3 @@
 cmd/uiserver   # a dev server; the UI tests exercise it
+cmd/companion   # main only; the restart test runs it
+world   # the integration setup; the integration tests exercise it
