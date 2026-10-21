@@ -1,0 +1,10 @@
+.git
+**/node_modules
+web/build
+web/.svelte-kit
+src
+docs
+bruno
+**/data
+companion.yaml
+.env

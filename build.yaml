@@ -1,0 +1,28 @@
+# build.yaml – what the companion image compiles in (hpc build, docs/concepts/
+# modular-architecture.md §5.6). companion.yaml says what runs and how it is
+# connected; a module listed here but not configured there does nothing.
+#
+# core: ./ builds against this checkout, and this repository's modules
+# without @version from it. For a build of released modules, name a version:
+# core: v1.0.0. Other modules: path@version, or "path => ./dir" for a local one.
+core: ./
+modules:
+  - github.com/LNA-DEV/HomePageCompanion/modules/autoupload
+  - github.com/LNA-DEV/HomePageCompanion/modules/basemap
+  - github.com/LNA-DEV/HomePageCompanion/modules/blob-fs
+  - github.com/LNA-DEV/HomePageCompanion/modules/blob-s3
+  - github.com/LNA-DEV/HomePageCompanion/modules/bluesky
+  - github.com/LNA-DEV/HomePageCompanion/modules/db-sqlite
+  - github.com/LNA-DEV/HomePageCompanion/modules/gbif
+  - github.com/LNA-DEV/HomePageCompanion/modules/instagram
+  - github.com/LNA-DEV/HomePageCompanion/modules/interactions
+  - github.com/LNA-DEV/HomePageCompanion/modules/mastodon
+  - github.com/LNA-DEV/HomePageCompanion/modules/media
+  - github.com/LNA-DEV/HomePageCompanion/modules/microblog
+  - github.com/LNA-DEV/HomePageCompanion/modules/pixelfed
+  - github.com/LNA-DEV/HomePageCompanion/modules/routing
+  - github.com/LNA-DEV/HomePageCompanion/modules/rss
+  - github.com/LNA-DEV/HomePageCompanion/modules/threads
+  - github.com/LNA-DEV/HomePageCompanion/modules/trips
+  - github.com/LNA-DEV/HomePageCompanion/modules/webmention
+  - github.com/LNA-DEV/HomePageCompanion/modules/webpush

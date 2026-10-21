@@ -8,6 +8,7 @@ import (
 	"io"
 	"io/fs"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -42,6 +43,7 @@ commands:
          --new KEY (the old key is COMPANION_SECRET_KEY)
   config check              read companion.yaml and check every connection
   modules                   list the compiled-in building blocks
+  health                    exit 0 when the running companion answers /health
   version
 
 flags (or COMPANION_CONFIG, COMPANION_DATA):
@@ -93,6 +95,8 @@ func run(args []string) int {
 		}
 	case "version":
 		fmt.Println(buildVersion())
+	case "health":
+		err = healthCmd(opts)
 	case "help", "-h", "--help":
 		fmt.Print(usage)
 	default:
@@ -104,6 +108,37 @@ func run(args []string) int {
 		return 1
 	}
 	return 0
+}
+
+// healthCmd asks the companion on this machine for /health: the container's
+// health check, which has no curl.
+func healthCmd(opts Options) error {
+	listen := opts.Listen
+	if listen == "" {
+		if f, _, err := conf.Load(opts.ConfigPath); err == nil {
+			listen = f.Core.Listen
+		}
+	}
+	if listen == "" {
+		listen = ":8080"
+	}
+	host, port, err := net.SplitHostPort(listen)
+	if err != nil {
+		return err
+	}
+	if host == "" || host == "0.0.0.0" || host == "::" {
+		host = "127.0.0.1"
+	}
+	client := &http.Client{Timeout: 5 * time.Second}
+	resp, err := client.Get("http://" + net.JoinHostPort(host, port) + "/health")
+	if err != nil {
+		return err
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("/health: HTTP %d", resp.StatusCode)
+	}
+	return nil
 }
 
 func envOr(k, def string) string {

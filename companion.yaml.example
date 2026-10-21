@@ -1,0 +1,135 @@
+# companion.yaml – what runs and how it is connected
+# (docs/concepts/modular-architecture.md §5.5). build.yaml says what is
+# compiled in. Copy this to data/companion.yaml (the container reads it
+# there) and put the secrets into .env: ${NAME} is read from the
+# environment, ${NAME:-default} with a default.
+#
+# An old installation does not need this file: "companion migrate" writes it
+# from data/config.yaml (docker compose run --rm companion migrate).
+#
+# Every building block has instances: "config:" is the instance "default",
+# "instances:" are named ones. A slot names an instance as block:name
+# ("rss:photos"); a bare block means block:default. Changes are picked up
+# without a restart; only a new module needs a new build.
+
+core:
+  domain: ${COMPANION_DOMAIN:-example.com}  # CORS: this domain and its subdomains
+  # extraOrigins: ["http://<address>.onion"] # further origins, compared exactly
+  adminKey: ${ADMIN_API_KEY}                # the admin login and the ApiKey header
+  publicUrl: https://companion.example.com  # the companion's public URL
+  # listen: ":8080"
+  database: db.sqlite                       # exactly one database module
+  blobs: blob.s3                            # blob.fs (data/blobs/) or blob.s3
+  # backups: { schedule: "0 0 3 * * *", keep: 7 }  # into core/backups/ of the blob store
+  # cacheMB: 1024                           # limit of data/cache/
+
+modules:
+  db.sqlite: {}          # data/db/<module>.db
+  blob.s3:
+    config:
+      bucketUrl: s3://<bucket>?endpoint=https://nbg1.your-objectstorage.com&region=nbg1
+      prefix: home-page-companion  # nothing outside it is written or deleted
+      # credentials from AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY
+  media: {}              # media.image/v1: resizing, EXIF
+
+  # Feeds.
+  rss:
+    instances:
+      photos:
+        url: https://example.com/gallery/index.xml
+
+  # Networks: social.publisher/v1 and social.interactions/v1.
+  mastodon:
+    instances:
+      main:
+        instance: ${MASTODON_INSTANCE}
+        token: ${MASTODON_PAT}
+        # maxLength: 500   # the instance's limit (/api/v2/instance, max_characters)
+  pixelfed:
+    instances:
+      main:
+        instance: ${PIXELFED_INSTANCE:-https://pixelfed.de}
+        token: ${PIXELFED_PAT}
+  bluesky:
+    instances:
+      main:
+        username: ${BLUESKY_USERNAME}
+        password: ${BLUESKY_PAT}   # an app password
+  instagram:
+    instances:
+      main:
+        accountId: ${INSTAGRAM_ACCOUNT_ID}
+        accessToken: ${INSTAGRAM_ACCESS_TOKEN}  # refreshed every week; a new one here replaces it
+  threads:
+    instances:
+      main:
+        userId: ${THREADS_USER_ID}
+        accessToken: ${THREADS_ACCESS_TOKEN}
+
+  # Autoposting: one instance per connection, feed → network.
+  autoupload:
+    instances:
+      photos-mastodon:
+        source: rss:photos
+        target: mastodon:main
+        media: media
+        strategy: rotate          # rotate (one post per run) or announce (each new one)
+        cron: "0 0 18 * * *"      # with seconds; empty: by hand only
+        caption: More at https://example.com/gallery
+        # includeAltText: true    # the image's alt text above the caption
+        # tagModels: true         # mention people whose feed entry has autotag="true"
+        # modelsPrefix: "With"    # the names line: "With A, B and C"
+        # modelsAnd: "and"
+        # notify: webpush         # tell me about failed uploads
+      photos-pixelfed:
+        source: rss:photos
+        target: pixelfed:main
+        media: media
+        cron: "0 30 18 * * *"
+      photos-bluesky:
+        source: rss:photos
+        target: bluesky:main
+        media: media
+        cron: "0 0 19 * * *"
+      photos-instagram:
+        source: rss:photos
+        target: instagram:main
+        media: media
+        cron: "0 30 19 * * *"
+        caption: More at example.com or the link in my profile
+      photos-threads:
+        source: rss:photos
+        target: threads:main
+        media: media
+        cron: "0 0 20 * * *"
+
+  # The website's building blocks.
+  interactions:
+    config:
+      ipHashSalt: ${IP_HASH_SALT}   # website likes keep only a salted hash of the IP
+      platforms: [mastodon:main, pixelfed:main, bluesky:main, instagram:main, threads:main]
+  microblog:
+    config:
+      publishTo: [mastodon:main, bluesky:main, threads:main]
+  webpush:
+    config:
+      subscriber: ${WEBPUSH_SUBSCRIBER_MAIL:-mailto:admin@example.com}
+  webmention: {}
+    # config: { notify: webpush }   # tell me about new mentions
+
+  # Maps (Home-Page docs/concepts/self-hosted-maps.md).
+  routing: {}
+    # config: { osrmUrl: https://router.project-osrm.org/route/v1, transitousUrl: https://api.transitous.org/api/v1/plan }
+  trips:
+    config:
+      routing: routing
+      media: media
+  basemap:
+    config:
+      source: https://build.protomaps.com  # daily builds, <source>/<YYYYMMDD>.pmtiles
+      schemaMajor: 4                       # the tile schema the site's style is written for
+      schedule: "0 0 3 1 * *"              # 03:00 on the 1st
+      retainDays: 7                        # keep the previous build this long after a switch
+      # publicUrl: defaults to core.publicUrl + /api/tiles/basemap
+  gbif: {}
+    # config: { baseUrl: https://api.gbif.org/v2/map/occurrence/density, cacheMB: 1024 }

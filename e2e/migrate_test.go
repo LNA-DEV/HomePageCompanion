@@ -197,3 +197,33 @@ func TestMigrateIntoAPreparedCompanion(t *testing.T) {
 		t.Fatalf("pre-migrate backups %v", pre)
 	}
 }
+
+// companion.yaml.example loads with every module compiled in: each block
+// and slot in it exists and every instance accepts its config.
+func TestExampleConfigIsValid(t *testing.T) {
+	raw, err := os.ReadFile("../companion.yaml.example")
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	cfg := filepath.Join(dir, "companion.yaml")
+	example := strings.Replace(string(raw), "s3://<bucket>", "s3://example-bucket", 1)
+	if err := os.WriteFile(cfg, []byte(example), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for _, v := range []string{"ADMIN_API_KEY", "MASTODON_INSTANCE", "MASTODON_PAT", "PIXELFED_PAT", "BLUESKY_USERNAME", "BLUESKY_PAT",
+		"INSTAGRAM_ACCOUNT_ID", "INSTAGRAM_ACCESS_TOKEN", "THREADS_USER_ID", "THREADS_ACCESS_TOKEN", "IP_HASH_SALT"} {
+		t.Setenv(v, "x-"+strings.ToLower(v))
+	}
+	t.Setenv("MASTODON_INSTANCE", "https://mastodon.example")
+	c := core.New(core.Options{ConfigPath: cfg, DataDir: filepath.Join(dir, "data"), Logs: io.Discard})
+	if err := c.Prepare(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	defer c.Stop(context.Background())
+	for _, id := range []string{"autoupload:photos-threads", "basemap:default", "trips:default", "interactions:default"} {
+		if _, ok := c.Instance(id); !ok {
+			t.Errorf("no %s", id)
+		}
+	}
+}
