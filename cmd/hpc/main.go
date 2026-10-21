@@ -22,6 +22,13 @@ commands:
   gen [-openapi dir] [-ts dir] [-check] [packages]
                   adapters, OpenAPI and TypeScript types from the capabilities
                   (default ./capability/...)
+  test [dir] [--live]
+                  a module: go vet and go test -race, with the conformance
+                  suites of its capabilities
+  test --run "<command>" [--config file] [--name id] [-v]
+                  a service, in any language: start it with the command next
+                  to a test core and run the conformance suites of what it
+                  offers through the wire protocol
   backup, restore, migrate, secrets, config, modules, version
                   run the companion's command of that name
                   (the program: $HPC_COMPANION, ./companion or companion on PATH)
@@ -41,6 +48,8 @@ func main() {
 		err = genCmd(args)
 	case "apply":
 		err = applyCmd(args)
+	case "test":
+		err = testCmd(args)
 	case "backup", "restore", "migrate", "secrets", "config", "modules", "version":
 		err = forward(cmd, args)
 	case "help", "-h", "--help":

@@ -74,7 +74,13 @@ var coreRoutes = []string{"/api/core", "/api/b", "/health", "/metrics", "/ui"}
 func (c *Core) rebuildGateway() error {
 	gin.SetMode(gin.ReleaseMode)
 	r := gin.New()
-	r.Use(gin.LoggerWithWriter(logger.Access(), "/health"), c.recovery())
+	access := logger.Access()
+	if c.opts.Logs != nil {
+		// Requests go with the core's log where that is not the
+		// companion's own (tests, hpc test, migrate).
+		access = c.opts.Logs
+	}
+	r.Use(gin.LoggerWithWriter(access, "/health"), c.recovery())
 
 	proxies, err := TrustedProxies(os.Getenv("TRUSTED_PROXIES"))
 	if err != nil {

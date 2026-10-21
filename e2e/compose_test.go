@@ -29,7 +29,7 @@ type probeResult struct {
 	Error  string `json:"error"`
 }
 
-func run(t *testing.T, dir, name string, args ...string) string {
+func runIn(t *testing.T, dir, name string, args ...string) string {
 	t.Helper()
 	cmd := exec.Command(name, args...)
 	cmd.Dir = dir
@@ -91,7 +91,7 @@ services:
 `, port)), 0o644)
 
 	cleanup(t, dir)
-	out := run(t, dir, hpc, "apply", "--yes")
+	out := runIn(t, dir, hpc, "apply", "--yes")
 	t.Logf("hpc apply:\n%s", out)
 	for _, want := range []string{"asks for  volume", "gets      egress allowed:8080 · volume", "new service"} {
 		if !strings.Contains(out, want) {
@@ -143,24 +143,24 @@ services:
 	}
 
 	// Its container, as hpc apply wrote it.
-	id := run(t, dir, "docker", "compose", "-f", "docker-compose.yml", "-f", "compose.generated.yml", "ps", "-q", "probe")
-	inspect := run(t, dir, "docker", "inspect", "--format",
+	id := runIn(t, dir, "docker", "compose", "-f", "docker-compose.yml", "-f", "compose.generated.yml", "ps", "-q", "probe")
+	inspect := runIn(t, dir, "docker", "inspect", "--format",
 		"{{.HostConfig.ReadonlyRootfs}} {{.HostConfig.CapDrop}} {{.HostConfig.SecurityOpt}} {{.Config.User}} {{.HostConfig.Memory}} {{.HostConfig.PidsLimit}}", id)
 	if inspect != "true [ALL] [no-new-privileges:true] 65532 268435456 128" {
 		t.Errorf("container settings: %s", inspect)
 	}
-	nets := run(t, dir, "docker", "inspect", "--format", "{{range $k, $v := .NetworkSettings.Networks}}{{$k}} {{end}}", id)
+	nets := runIn(t, dir, "docker", "inspect", "--format", "{{range $k, $v := .NetworkSettings.Networks}}{{$k}} {{end}}", id)
 	netName := strings.TrimSpace(nets)
 	if strings.Contains(netName, " ") || !strings.HasSuffix(netName, "_svc-probe") {
 		t.Errorf("networks: %q", nets)
 	}
-	if internal := run(t, dir, "docker", "network", "inspect", "--format", "{{.Internal}}", netName); internal != "true" {
+	if internal := runIn(t, dir, "docker", "network", "inspect", "--format", "{{.Internal}}", netName); internal != "true" {
 		t.Errorf("its network is not internal: %s", internal)
 	}
 
 	// A restart of the service: the core notices, at the latest with its
 	// next health check, and configures it again.
-	run(t, dir, "docker", "restart", id)
+	runIn(t, dir, "docker", "restart", id)
 	deadline := time.Now().Add(30 * time.Second)
 	for {
 		code, b := admin("POST", "/api/b/probe/notify")
@@ -186,7 +186,7 @@ func buildProbe(t *testing.T, dir string) {
 		t.Fatalf("build probe: %v\n%s", err, out)
 	}
 	os.WriteFile(filepath.Join(probe, "Dockerfile"), []byte("FROM gcr.io/distroless/static-debian12:nonroot\nCOPY probe /probe\nENTRYPOINT [\"/probe\"]\n"), 0o644)
-	run(t, probe, "docker", "build", "--quiet", "-t", "companion-probe:test", ".")
+	runIn(t, probe, "docker", "build", "--quiet", "-t", "companion-probe:test", ".")
 }
 
 func buildHPC(t *testing.T, bin string) string {
@@ -326,7 +326,7 @@ services:
       main: { server: "http://lemmy-fake:8080", username: bot, password: bot-password, community: photography }
 `, port, root)), 0o644)
 	cleanup(t, dir)
-	out := run(t, dir, hpc, "apply", "--yes")
+	out := runIn(t, dir, hpc, "apply", "--yes")
 	t.Logf("hpc apply:\n%s", out)
 	if !strings.Contains(out, "offers    social.publisher/v1") || !strings.Contains(out, "gets      egress lemmy-fake:8080 · egress feed:8080") {
 		t.Errorf("hpc apply did not show the rights:\n%s", out)

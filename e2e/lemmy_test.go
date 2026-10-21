@@ -268,3 +268,49 @@ func TestLemmyServiceContract(t *testing.T) {
 		t.Fatalf("a wrong password stopped the instance: %s", view)
 	}
 }
+
+// hpc test, as a service's author runs it: the Lemmy service, started by
+// its command next to hpc's test core, passes social.publisher/v1's
+// conformance suite against the fake Lemmy; with the wrong password it
+// fails, saying why.
+func TestLemmyWithHpcTest(t *testing.T) {
+	if _, err := exec.LookPath("python3"); err != nil {
+		t.Skip("no python3")
+	}
+	root, _ := filepath.Abs("..")
+	hpc := filepath.Join(t.TempDir(), "hpc")
+	if out, err := exec.Command("go", "build", "-o", hpc, "github.com/LNA-DEV/HomePageCompanion/cmd/hpc").CombinedOutput(); err != nil {
+		t.Fatalf("build hpc: %v\n%s", err, out)
+	}
+	lemmy := fakes.NewLemmy("")
+	srv := lemmy.Serve()
+	defer srv.Close()
+	config := filepath.Join(t.TempDir(), "lemmy.yaml")
+	os.WriteFile(config, []byte(fmt.Sprintf(`instances:
+  main: { server: %q, username: bot, password: bot-password, community: photography }
+`, srv.URL)), 0o600)
+
+	cmd := exec.Command(hpc, "test", "-v", "--run", "python3 "+filepath.Join(root, "services", "lemmy", "lemmy.py"), "--config", config)
+	cmd.Env = append(os.Environ(), "PYTHONPATH="+filepath.Join(root, "sdk", "python"))
+	out, err := cmd.CombinedOutput()
+	t.Logf("hpc test:\n%s", out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(out), "social.publisher/v1 main ok") {
+		t.Fatal("the suite did not run")
+	}
+	if posts := lemmy.Posts(); len(posts) != 1 || posts[0].Name != "Conformance test" {
+		t.Fatalf("the fake Lemmy got %+v", posts)
+	}
+
+	os.WriteFile(config, []byte(fmt.Sprintf(`instances:
+  main: { server: %q, username: bot, password: not-it, community: photography }
+`, srv.URL)), 0o600)
+	cmd = exec.Command(hpc, "test", "--run", "python3 "+filepath.Join(root, "services", "lemmy", "lemmy.py"), "--config", config)
+	cmd.Env = append(os.Environ(), "PYTHONPATH="+filepath.Join(root, "sdk", "python"))
+	out, err = cmd.CombinedOutput()
+	if err == nil || !strings.Contains(string(out), "social.publisher/v1 main FAIL: publish: lemmy: incorrect_login") {
+		t.Fatalf("with the wrong password: %v\n%s", err, out)
+	}
+}
