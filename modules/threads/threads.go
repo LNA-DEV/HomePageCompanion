@@ -40,10 +40,15 @@ func init() {
 
 const maxStatusPolls = 10
 
-// Account is one Threads account.
+// Account is one Threads account. Either its token comes from the config
+// (accessToken and userId), or the account is connected on the settings
+// page through OAuth, with the Threads app's ID and secret (appId,
+// appSecret).
 type Account struct {
 	UserID      string `json:"userId"`
 	AccessToken string `json:"accessToken" companion:"secret"`
+	AppID       string `json:"appId"`
+	AppSecret   string `json:"appSecret" companion:"secret"`
 
 	Notify notify.Notifier `companion:"slot=notify"`
 
@@ -70,10 +75,81 @@ func (a *Account) Provision(ctx companion.Context) error {
 }
 
 func (a *Account) Validate() error {
-	if a.UserID == "" {
-		return errors.New("userId is required")
+	if (a.AppID == "") != (a.AppSecret == "") {
+		return errors.New("appId and appSecret go together")
 	}
 	return nil
+}
+
+// userID is the connected account's ID, or else the configured one.
+func (a *Account) userID() string {
+	if _, id, ok := a.keeper.Connected(); ok && id != "" {
+		return id
+	}
+	return a.UserID
+}
+
+// account is the token and user ID to post with.
+func (a *Account) account() (token, id string, err error) {
+	token, id = a.token(), a.userID()
+	if token == "" || id == "" {
+		return "", "", fmt.Errorf("threads %s: %w: connect it on its settings page, or set accessToken and userId", a.ctx.InstanceName(), social.ErrNotConnected)
+	}
+	return token, id, nil
+}
+
+func (a *Account) OAuthClient(_ context.Context, redirectURI string) (companion.OAuthClient, error) {
+	if a.AppID == "" {
+		return companion.OAuthClient{}, fmt.Errorf("set appId and appSecret, the Threads app ID and secret from the app dashboard, and register %s there as a redirect callback URL", redirectURI)
+	}
+	return companion.OAuthClient{AuthURL: api.AuthorizeURL, TokenURL: api.TokenURL, ClientID: a.AppID, ClientSecret: a.AppSecret,
+		Scopes: api.Scopes, ScopeSep: ","}, nil
+}
+
+// OAuthConnect trades the login's short-lived token for a long-lived one
+// and hands that to the keeper, which refreshes it from now on.
+func (a *Account) OAuthConnect(ctx context.Context, _ companion.OAuthClient, tok companion.OAuthToken) (string, error) {
+	long, err := api.ExchangeLongLived(ctx, a.AppSecret, tok.AccessToken)
+	if err != nil {
+		return "", err
+	}
+	p, err := api.GetProfile(ctx, long.AccessToken)
+	if err != nil {
+		return "", err
+	}
+	expires := time.Now().Add(time.Duration(long.ExpiresIn) * time.Second)
+	if long.ExpiresIn <= 0 {
+		expires = time.Now().Add(60 * 24 * time.Hour)
+	}
+	name := "@" + p.Username
+	if err := a.keeper.Connect(long.AccessToken, expires, name, p.UserID); err != nil {
+		return "", err
+	}
+	a.forgetSelf()
+	return name, nil
+}
+
+func (a *Account) OAuthState() companion.OAuthState {
+	st := a.keeper.Status()
+	if st.Source != "connected" {
+		return companion.OAuthState{}
+	}
+	out := companion.OAuthState{Connected: true, Account: st.Account, ExpiresAt: st.ExpiresAt}
+	if a.AccessToken != "" {
+		out.Note = "A new accessToken in the settings replaces the connected account."
+	}
+	return out
+}
+
+func (a *Account) OAuthDisconnect(context.Context) error {
+	a.forgetSelf()
+	return a.keeper.Disconnect()
+}
+
+func (a *Account) forgetSelf() {
+	a.selfMu.Lock()
+	a.self = ""
+	a.selfMu.Unlock()
 }
 
 // SetPollGap shortens the status polling; for tests.
@@ -103,7 +179,7 @@ func (a *Account) refreshDue(ctx context.Context) error {
 // Describe: Threads counts an emoji as its UTF-8 bytes, and indexes only one
 // topic tag per post (further #tags show as dead text).
 func (a *Account) Describe(context.Context) (social.Limits, error) {
-	return social.Limits{Platform: "threads", Account: a.UserID, MaxLength: 500, LengthUnit: "utf8-emoji", MaxHashtags: 1,
+	return social.Limits{Platform: "threads", Account: a.userID(), MaxLength: 500, LengthUnit: "utf8-emoji", MaxHashtags: 1,
 		MaxImages: 1, LinkCard: "auto", MentionProfiles: []string{"threads"}}, nil
 }
 
@@ -143,13 +219,15 @@ func wrap(err error) error {
 // URL itself) or a text container, waits until it is ready, publishes it and
 // resolves the permalink.
 func (a *Account) Publish(ctx context.Context, p social.Post) (social.Result, error) {
-	tok := a.token()
+	tok, userID, err := a.account()
+	if err != nil {
+		return social.Result{}, err
+	}
 	var creationID string
-	var err error
 	if len(p.Images) > 0 && p.Images[0].URL != "" {
-		creationID, err = api.CreateImageContainer(a.UserID, tok, p.Images[0].URL, text(p))
+		creationID, err = api.CreateImageContainer(userID, tok, p.Images[0].URL, text(p))
 	} else {
-		creationID, err = api.CreateTextContainer(a.UserID, tok, text(p))
+		creationID, err = api.CreateTextContainer(userID, tok, text(p))
 	}
 	if err != nil {
 		return social.Result{}, fmt.Errorf("create container: %w", wrap(err))
@@ -173,7 +251,7 @@ func (a *Account) Publish(ctx context.Context, p social.Post) (social.Result, er
 		}
 		return social.Result{}, fmt.Errorf("media not ready after %d attempts (last status: %q)", maxStatusPolls, status)
 	}
-	id, err := api.PublishContainer(a.UserID, tok, creationID)
+	id, err := api.PublishContainer(userID, tok, creationID)
 	if err != nil {
 		return social.Result{}, fmt.Errorf("publish container: %w", wrap(err))
 	}
@@ -256,6 +334,8 @@ var (
 	_ social.Publisher    = (*Account)(nil)
 	_ social.Interactions = (*Account)(nil)
 	_ social.Deleter      = (*Account)(nil)
+
+	_ companion.OAuthConnector = (*Account)(nil)
 )
 
 func routes(mc companion.ModuleContext, r *companion.Router) {
