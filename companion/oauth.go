@@ -84,6 +84,9 @@ type OAuthState struct {
 	// Note explains something the operator should know, e.g. that the
 	// token in companion.yaml is not used while an account is connected.
 	Note string `json:"note,omitempty"`
+	// RedirectURI is the callback, set by the core: Meta wants it
+	// registered with the app. Empty while core.publicUrl is not set.
+	RedirectURI string `json:"redirectUri,omitempty"`
 }
 
 // OAuthError is a refusal by the token endpoint.

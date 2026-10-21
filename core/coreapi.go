@@ -154,6 +154,7 @@ func (c *Core) getInstance(g *gin.Context) {
 	// Outside the lock: the state comes from the secret store.
 	if conn, ok := value.(companion.OAuthConnector); ok {
 		st := conn.OAuthState()
+		st.RedirectURI = c.redirectURI(v.Block)
 		v.OAuth = &st
 	}
 	g.JSON(http.StatusOK, v)

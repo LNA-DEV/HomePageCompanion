@@ -181,12 +181,19 @@
 			<div class="text-sm">
 				<h2 class="text-lg font-semibold mb-1">Account</h2>
 				{#if o.connected}
-					<p>Connected as <span class="font-medium">{o.account}</span>{#if o.since} since {formatDate(o.since, false)}{/if}.</p>
+					<p>Connected as <span class="font-medium">{o.account}</span>{#if o.since}{' '}since {formatDate(o.since, false)}{/if}.</p>
 					{#if o.expiresAt}<p class="text-gray-500 dark:text-gray-400">The token is valid until {formatDate(o.expiresAt)}; it is refreshed by itself.</p>{/if}
 				{:else}
 					<p class="text-gray-600 dark:text-gray-300">Not connected. Connect the account here, or put a token into the settings below.</p>
 				{/if}
 				{#if o.note}<p class="mt-1 text-amber-700 dark:text-amber-300">{o.note}</p>{/if}
+				{#if o.redirectUri}
+					<p class="mt-2 text-xs text-gray-500 dark:text-gray-400">
+						Callback URL, for apps that need it registered (Instagram, Threads): <code class="select-all break-all">{o.redirectUri}</code>
+					</p>
+				{:else}
+					<p class="mt-2 text-xs text-amber-700 dark:text-amber-300">Set <code>core.publicUrl</code> in companion.yaml to connect accounts: the platform sends you back there.</p>
+				{/if}
 			</div>
 			<div class="flex gap-2">
 				<button class="btn-primary btn-sm" disabled={busy !== ''} onclick={connect}>{o.connected ? 'Reconnect' : 'Connect account'}</button>

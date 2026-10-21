@@ -307,6 +307,8 @@ Never possible: S3 credentials, Docker access, other services, other building bl
 
 **Connecting accounts (OAuth).** The core runs the flow (redirect, callback at `/api/b/<id>/oauth/callback`, `state` and PKCE, code exchange); the module only names the authorisation URL and scopes, and registers an app first where the platform requires it (Mastodon, Pixelfed). Tokens go to the secret store (§5.10) and the module refreshes them itself. Instagram and Threads need a Meta app once (client ID and secret in `.env`). Where a platform has no OAuth, the token field in the settings form stays.
 
+As built (`companion/oauth.go`, `core/oauth.go`): an instance implements `companion.OAuthConnector`; the settings page asks `POST /api/b/<id>/oauth/start` for the authorisation URL. The session cookie is `SameSite=Strict`, so the platform's redirect back arrives without it: the callback is authenticated by the `state` alone, which only a logged-in operator can create, works once and lives 15 minutes. The callback answers a page of its own that moves on to the settings page, because a redirect would still count as cross-site and lose the cookie. The redirect URI is `core.publicUrl` + `/api/b/<id>/oauth/callback`; the settings page shows it for registering with Meta. A connected account takes the place of the configured token; disconnecting brings the configured one back. Mastodon and Pixelfed share `lib/fediauth`, Instagram and Threads hand the long-lived token to `lib/metatoken`, where a new token in `.env` still replaces the connection. Bluesky keeps its app password (§10.1).
+
 ### 5.9 Runtime
 
 | Aspect | Module | Service |
@@ -495,6 +497,20 @@ A registry with a "discover" page; templates `hpc new module` and `hpc new servi
 |---|---|---|
 | Whether `go get` can resolve the core as it is laid out | `src/go.mod` declares the repository root as module path, without a `go.mod` there; not tried | `go get github.com/LNA-DEV/HomePageCompanion@8c01664` from an empty module; fix the module path or the layout in Stage 0 |
 | Memory per service container (10–30 MB assumed) and build time of `hpc build` | estimates, nothing built yet | measure the first service and the first `hpc build` in Stage 1 and 3 |
-| Threads text posts and link previews, Bluesky link cards, OAuth for Bluesky and Meta | API behaviour from memory, not checked against the docs | read the current platform docs before Stage 2; record the results here like `model-tagging.md` §4 |
+| ~~Threads text posts and link previews, Bluesky link cards, OAuth for Bluesky and Meta~~ | checked 2026-10-21, §10.1 | |
 | Real data: the live gallery feed and a production `companion.db` | `lna-dev.net` is not reachable from the sandbox; production needs the admin key | run `hpc migrate --check` against a copy of the production `data/` before Stage 1 |
 | Whether openresty sets or appends `X-Forwarded-For` | host config, outside this repository | as in `webmention.md` §14; decides the `SetTrustedProxies` value |
+
+### 10.1 Platform behaviour, checked 2026-10-21
+
+Read from the official documentation sources: Mastodon's and atproto's documentation repositories, Pixelfed's and Laravel Passport's source, Meta's developer pages and its `fbsamples/threads_api`. The documentation sites themselves did not resolve from the sandbox.
+
+| Platform | Account connection | Tokens | Notes |
+|---|---|---|---|
+| Mastodon | `POST /api/v1/apps` (`client_name`, `redirect_uris`, `scopes`), then `/oauth/authorize` and `/oauth/token`; PKCE `S256` and `/.well-known/oauth-authorization-server` from 4.3 | do not expire, no refresh token; `/oauth/revoke` | the app is registered with every scope it later asks for: `read:accounts read:statuses write:media write:statuses` (`profile` would do for the account, but only from 4.3) |
+| Pixelfed | `POST /api/v1/apps` too; `redirect_uris` is a newline-separated string, `scopes` is ignored; Laravel Passport behind `/oauth/authorize` and `/oauth/token` | expire after 365 days (`OAUTH_TOKEN_DAYS`), with a refresh token (400 days); no revoke endpoint | only `read` and `write`, no granular scopes; PKCE optional |
+| Bluesky | atproto OAuth: `client_id` is the URL of a client metadata document, PAR, DPoP with server nonces on the token endpoint and on every PDS request, PKCE `S256`; a confidential client authenticates with `private_key_jwt` against a published JWKS | access tokens under 30 minutes, single-use refresh tokens; public clients limited to two weeks | app passwords are still supported. Link cards: the client fetches the page and uploads the thumbnail itself (`app.bsky.embed.external`, thumb up to 1 MB); posts 300 graphemes |
+| Instagram | Instagram API with Instagram Login: `https://www.instagram.com/oauth/authorize`, scopes comma-separated (`instagram_business_basic`, `instagram_business_content_publish`, …), code at `https://api.instagram.com/oauth/access_token`; the Instagram app's ID and secret, not the Meta app's | the code gives a 1-hour token, `ig_exchange_token` a 60-day one, `ig_refresh_token` renews it after 24 hours | the redirect URI must be registered exactly in the dashboard; PKCE not documented; the documented answer wraps the token in `data: [...]` |
+| Threads | `https://www.threads.com/oauth/authorize`, code at `https://graph.threads.net/oauth/access_token`; the Threads app's ID and secret | `th_exchange_token` gives 60 days, `th_refresh_token` renews it | https redirects only, never localhost; deleting needs `threads_delete`. Text posts: `media_type=TEXT`, 500 characters (emoji counted by UTF-8 bytes); without `link_attachment` the first URL becomes the preview; at most 5 links per post |
+
+**Bluesky stays on app passwords for now.** Its OAuth does not fit the model above, where a module names URLs and scopes: it needs PAR, DPoP proofs (with nonce retries) on every request of the Bluesky client, a client metadata document and a JWKS served from `core.publicUrl`, and `private_key_jwt` instead of a client secret. That is a client of its own, not a few hooks; it waits for a decision.

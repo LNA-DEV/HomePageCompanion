@@ -9,7 +9,8 @@
 	interface Status {
 		instance: string;
 		status: 'ok' | 'expiring' | 'expired' | 'unknown';
-		source?: string;
+		source?: 'config' | 'refreshed' | 'connected';
+		account?: string;
 		refreshedAt?: string;
 		expiresAt?: string;
 		daysLeft?: number;
@@ -68,6 +69,7 @@
 					</span>
 				</div>
 				<p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+					{#if t.source === 'connected'}{t.account}, connected · {/if}
 					{#if t.refreshedAt}refreshed {timeAgo(t.refreshedAt)}{:else}from the config{/if}
 					{#if t.expiresAt} · expires {formatDate(t.expiresAt, false)}{/if}
 				</p>

@@ -113,7 +113,8 @@ func TestOAuthFlow(t *testing.T) {
 		t.Fatalf("callback %d %s", w.Code, body)
 	}
 	view := h.Admin("GET", "/api/core/instances/t.oauth:main", nil).Body.String()
-	if !strings.Contains(view, `"oauth":{"connected":true,"account":"@me"`) || strings.Contains(view, "tok-c1") {
+	if !strings.Contains(view, `"oauth":{"connected":true,"account":"@me"`) || strings.Contains(view, "tok-c1") ||
+		!strings.Contains(view, `"redirectUri":"https://companion.example/api/b/t.oauth/oauth/callback"`) {
 		t.Fatalf("instance view %s", view)
 	}
 	// A state works once.
@@ -136,7 +137,7 @@ func TestOAuthFlow(t *testing.T) {
 	if w := h.Admin("POST", "/api/b/t.oauth/oauth/disconnect", map[string]string{"instance": "main"}); w.Code != 200 {
 		t.Fatalf("disconnect %d", w.Code)
 	}
-	if view := h.Admin("GET", "/api/core/instances/t.oauth:main", nil).Body.String(); !strings.Contains(view, `"oauth":{"connected":false}`) {
+	if view := h.Admin("GET", "/api/core/instances/t.oauth:main", nil).Body.String(); !strings.Contains(view, `"oauth":{"connected":false,"redirectUri"`) {
 		t.Fatalf("after disconnect %s", view)
 	}
 }

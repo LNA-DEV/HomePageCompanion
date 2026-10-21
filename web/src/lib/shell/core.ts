@@ -80,6 +80,7 @@ export interface OAuthState {
 	since?: string;
 	expiresAt?: string;
 	note?: string;
+	redirectUri?: string;
 }
 
 export interface JobRun {
