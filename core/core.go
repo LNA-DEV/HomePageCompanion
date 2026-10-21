@@ -630,10 +630,16 @@ func (c *Core) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	(*h).ServeHTTP(w, r)
 }
 
+// linkedVersion is stamped by hpc build (-ldflags -X).
+var linkedVersion string
+
 func buildVersion() string {
+	if linkedVersion != "" {
+		return strings.TrimPrefix(linkedVersion, "v")
+	}
 	if bi, ok := debug.ReadBuildInfo(); ok {
 		for _, d := range bi.Deps {
-			if d.Path == "github.com/LNA-DEV/HomePageCompanion" && d.Version != "" && d.Version != "(devel)" {
+			if d.Path == "github.com/LNA-DEV/HomePageCompanion" && d.Version != "" && d.Version != "(devel)" && !strings.HasPrefix(d.Version, "v0.0.0-00010101000000") {
 				return strings.TrimPrefix(d.Version, "v")
 			}
 		}
