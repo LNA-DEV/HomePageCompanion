@@ -157,6 +157,16 @@ func (m *MemBlob) Bucket(prefix string) companion.Bucket {
 
 func (m *MemBlob) Durable() bool { return false }
 
+// Backdate moves an unfinished upload's start into the past; for tests of
+// cleanups that only touch stale uploads.
+func (m *MemBlob) Backdate(uploadID string, by time.Duration) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if u, ok := m.uploads[uploadID]; ok {
+		u.initiated = u.initiated.Add(-by)
+	}
+}
+
 // Keys lists every stored key; for assertions.
 func (m *MemBlob) Keys() []string {
 	m.mu.Lock()

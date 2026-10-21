@@ -3,6 +3,7 @@ go 1.26.0
 use (
 	.
 	./modules/autoupload
+	./modules/basemap
 	./modules/blob-fs
 	./modules/blob-s3
 	./modules/bluesky
