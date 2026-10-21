@@ -14,6 +14,7 @@ import (
 
 	"github.com/LNA-DEV/HomePageCompanion/capability/social"
 	"github.com/LNA-DEV/HomePageCompanion/companion"
+	"github.com/LNA-DEV/HomePageCompanion/lib/fediauth"
 	"github.com/LNA-DEV/HomePageCompanion/lib/imageresize"
 	"github.com/LNA-DEV/HomePageCompanion/lib/profiles"
 	"github.com/LNA-DEV/HomePageCompanion/modules/pixelfed/api"
@@ -42,12 +43,68 @@ type Account struct {
 	MaxImageLongEdge int    `json:"maxImageLongEdge"`
 
 	ctx      companion.Context
+	oauth    *fediauth.Conn
 	selfMu   sync.Mutex
 	self     string
 	selfTime time.Time
 }
 
-func (a *Account) Provision(ctx companion.Context) error { a.ctx = ctx; return nil }
+// oauthScopes: Pixelfed's server knows read and write.
+var oauthScopes = []string{"read", "write"}
+
+func (a *Account) Provision(ctx companion.Context) error {
+	a.ctx = ctx
+	a.oauth = fediauth.New(ctx, oauthScopes)
+	return nil
+}
+
+// token is the connected account's token, or else the configured one.
+func (a *Account) token(ctx context.Context) (string, error) {
+	if tok, ok, err := a.oauth.Token(ctx); ok || err != nil {
+		return tok, err
+	}
+	if a.Token == "" {
+		return "", fmt.Errorf("pixelfed %s: %w: connect it on its settings page or set token", a.ctx.InstanceName(), social.ErrNotConnected)
+	}
+	return a.Token, nil
+}
+
+func (a *Account) OAuthClient(ctx context.Context, redirectURI string) (companion.OAuthClient, error) {
+	return a.oauth.Client(ctx, a.Instance, redirectURI)
+}
+
+// OAuthConnect checks the new token and keeps it; the account is
+// @user@server.
+func (a *Account) OAuthConnect(ctx context.Context, client companion.OAuthClient, tok companion.OAuthToken) (string, error) {
+	acc, err := api.VerifyCredentials(ctx, a.Instance, tok.AccessToken)
+	if err != nil {
+		return "", err
+	}
+	name := "@" + acc.Username + "@" + host(a.Instance)
+	a.forgetSelf()
+	return name, a.oauth.Connect(client, tok, name, acc.ID)
+}
+
+func (a *Account) OAuthState() companion.OAuthState { return a.oauth.State(a.Token != "") }
+
+func (a *Account) OAuthDisconnect(ctx context.Context) error {
+	a.forgetSelf()
+	return a.oauth.Disconnect(ctx, a.Instance)
+}
+
+func (a *Account) forgetSelf() {
+	a.selfMu.Lock()
+	a.self = ""
+	a.selfMu.Unlock()
+}
+
+func host(instance string) string {
+	h := strings.TrimRight(strings.TrimSpace(instance), "/")
+	if i := strings.Index(h, "://"); i >= 0 {
+		h = h[i+3:]
+	}
+	return h
+}
 
 func (a *Account) Validate() error {
 	if strings.TrimSpace(a.Instance) == "" {
@@ -111,6 +168,10 @@ func (a *Account) Publish(ctx context.Context, p social.Post) (social.Result, er
 	if len(p.Images) == 0 {
 		return social.Result{}, fmt.Errorf("pixelfed: %w", social.ErrNeedsImage)
 	}
+	tok, err := a.token(ctx)
+	if err != nil {
+		return social.Result{}, err
+	}
 	data, _, err := companion.Fetch(ctx, a.ctx.HTTP(), p.Images[0].URL)
 	if err != nil {
 		return social.Result{}, err
@@ -120,11 +181,11 @@ func (a *Account) Publish(ctx context.Context, p social.Post) (social.Result, er
 	} else {
 		data = prepared
 	}
-	media, err := api.UploadMedia(a.Instance, a.Token, data, p.Images[0].Alt)
+	media, err := api.UploadMedia(a.Instance, tok, data, p.Images[0].Alt)
 	if err != nil {
 		return social.Result{}, wrap(err)
 	}
-	post, err := api.CreatePost(a.Instance, a.Token, caption(p), media.ID)
+	post, err := api.CreatePost(a.Instance, tok, caption(p), media.ID)
 	if err != nil {
 		return social.Result{}, wrap(err)
 	}
@@ -137,7 +198,11 @@ func (a *Account) selfAcct(ctx context.Context) (string, error) {
 	if a.self != "" && time.Since(a.selfTime) < time.Hour {
 		return a.self, nil
 	}
-	acc, err := api.VerifyCredentials(ctx, a.Instance, a.Token)
+	tok, err := a.token(ctx)
+	if err != nil {
+		return "", err
+	}
+	acc, err := api.VerifyCredentials(ctx, a.Instance, tok)
 	if err != nil {
 		return "", err
 	}
@@ -172,7 +237,7 @@ func (a *Account) ResolveMention(ctx context.Context, profileURL string) (social
 
 // GetStats counts the likes. The instance comes from the post's URL, so a
 // post matched by the backfill on another instance still counts.
-func (a *Account) GetStats(_ context.Context, ref social.Result) (social.Stats, error) {
+func (a *Account) GetStats(ctx context.Context, ref social.Result) (social.Stats, error) {
 	if ref.ID == "" {
 		return social.Stats{}, errors.New("pixelfed: missing post id")
 	}
@@ -184,7 +249,11 @@ func (a *Account) GetStats(_ context.Context, ref social.Result) (social.Stats, 
 			instance = pu.Host
 		}
 	}
-	resp, err := api.ListPostLikes(instance, a.Token, ref.ID)
+	tok, err := a.token(ctx)
+	if err != nil {
+		return social.Stats{}, err
+	}
+	resp, err := api.ListPostLikes(instance, tok, ref.ID)
 	if err != nil {
 		return social.Stats{}, wrap(err)
 	}
@@ -198,7 +267,11 @@ func (a *Account) ListReplies(context.Context, social.Result) ([]social.Reply, e
 
 // ListPosts returns the account's posts for the backfill.
 func (a *Account) ListPosts(ctx context.Context) ([]social.ListedPost, error) {
-	statuses, err := api.ListOwnStatuses(ctx, a.Instance, a.Token)
+	tok, err := a.token(ctx)
+	if err != nil {
+		return nil, err
+	}
+	statuses, err := api.ListOwnStatuses(ctx, a.Instance, tok)
 	if err != nil {
 		return nil, wrap(err)
 	}
@@ -217,6 +290,8 @@ var (
 	_ social.Publisher    = (*Account)(nil)
 	_ social.Interactions = (*Account)(nil)
 	_ social.Lister       = (*Account)(nil)
+
+	_ companion.OAuthConnector = (*Account)(nil)
 )
 
 func routes(mc companion.ModuleContext, r *companion.Router) {
@@ -230,7 +305,12 @@ func routes(mc companion.ModuleContext, r *companion.Router) {
 				continue
 			}
 			a := in.Instance.(*Account)
-			acc, err := api.VerifyCredentials(c.Request.Context(), a.Instance, a.Token)
+			tok, err := a.token(c.Request.Context())
+			if err != nil {
+				c.JSON(http.StatusBadGateway, gin.H{"ok": false, "error": err.Error()})
+				return
+			}
+			acc, err := api.VerifyCredentials(c.Request.Context(), a.Instance, tok)
 			if err != nil {
 				c.JSON(http.StatusBadGateway, gin.H{"ok": false, "error": err.Error()})
 				return
