@@ -3,7 +3,9 @@
 // <module>/ui/src/entry.ts (or .js); files named *.ce.svelte become custom
 // elements. The sources are staged under web/.modules/ so they resolve
 // svelte and @companion/ui from here, and each bundle carries its own
-// Tailwind CSS, without the base styles the shell already has.
+// Tailwind CSS, without the base styles the shell already has. That CSS is
+// scoped to the module's elements: unscoped, a module's .grid-cols-1 comes
+// after the shell's md:grid-cols-4 and wins on the shell's own pages.
 //
 //   node scripts/build-modules.mjs --out <dir> [<module dir>...]
 //   node scripts/build-modules.mjs --stage-only     (for svelte-check)
@@ -46,6 +48,32 @@ async function modulePath(dir) {
 	return m[1];
 }
 
+// The tags of a module's custom elements, from <svelte:options
+// customElement={{ tag: '...' }}> in its *.ce.svelte files.
+async function tagsOf(src) {
+	const tags = [];
+	for (const entry of await readdir(src, { recursive: true })) {
+		if (!entry.endsWith('.ce.svelte')) continue;
+		const m = (await readFile(path.join(src, entry), 'utf8')).match(/customElement=\{\{[^}]*tag:\s*['"]([a-z][a-z0-9-]*-[a-z0-9-]*)['"]/);
+		if (m) tags.push(m[1]);
+	}
+	return tags;
+}
+
+// scope prefixes every selector with the module's elements. :where() adds
+// no specificity, so inside them the module's rules keep their order.
+function scope(tags) {
+	const prefix = `:where(${tags.join(',')}) `;
+	return {
+		postcssPlugin: 'companion-scope',
+		Rule(rule) {
+			if (rule.parent?.type === 'atrule' && /keyframes$/i.test(rule.parent.name)) return;
+			if (rule.selectors.every((s) => s.startsWith(prefix))) return;
+			rule.selectors = rule.selectors.map((s) => (s.startsWith(prefix) ? s : prefix + s));
+		}
+	};
+}
+
 function entryOf(ui) {
 	for (const name of ['entry.ts', 'entry.js']) {
 		if (existsSync(path.join(ui, 'src', name))) return 'src/' + name;
@@ -72,6 +100,8 @@ for (const dir of dirs) {
 	const stage = path.join(staging, key);
 	await cp(path.join(ui, 'src'), path.join(stage, 'src'), { recursive: true });
 	if (stageOnly) continue;
+	const tags = await tagsOf(path.join(stage, 'src'));
+	if (tags.length === 0) throw new Error(`${dir}/ui has no *.ce.svelte element`);
 	await build({
 		configFile: false,
 		root: stage,
@@ -98,7 +128,8 @@ for (const dir of dirs) {
 						content: [path.join(stage, 'src/**/*.{svelte,ts,js}'), path.join(web, 'src/sdk/**/*.ts'), path.join(web, 'src/lib/components/**/*.svelte')],
 						corePlugins: { preflight: false }
 					}),
-					autoprefixer()
+					autoprefixer(),
+					scope(tags)
 				]
 			}
 		},

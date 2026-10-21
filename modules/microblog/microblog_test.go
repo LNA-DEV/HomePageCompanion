@@ -85,6 +85,14 @@ func TestCreatePublishesEverywhere(t *testing.T) {
 	if w := h.Admin("POST", "/api/b/microblog/posts/1/retry/2", nil); w.Code != 409 {
 		t.Fatalf("retry twice: %d", w.Code)
 	}
+	// The admin list carries the length limit the compose box counts against.
+	if w := h.Admin("GET", "/api/b/microblog/posts", nil); !strings.Contains(w.Body.String(), `"maxBodyChars":500`) {
+		t.Fatalf("list lacks the limit: %s", w.Body.String())
+	}
+	// The search finds a post by its slug too (links from the Posts page).
+	if w := h.Admin("GET", "/api/b/microblog/posts?q="+created.Slug, nil); !strings.Contains(w.Body.String(), `"total":1`) {
+		t.Fatalf("search by slug: %s", w.Body.String())
+	}
 
 	// The website sees it with likes from the interactions module and the
 	// image under its old URL.

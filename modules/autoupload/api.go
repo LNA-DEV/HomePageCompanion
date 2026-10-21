@@ -461,23 +461,33 @@ func routes(mc companion.ModuleContext, r *companion.Router) {
 			q = q.Where("cause = ?", body.Cause)
 		}
 		q.Find(&open)
+		// Only posts a connection of this module publishes are retried here;
+		// the rest (a microblog post) is retried where it was written.
 		seen := map[string]bool{}
-		var todo [][2]string
+		type job struct {
+			conn *Connection
+			item string
+		}
+		var todo []job
+		elsewhere := 0
 		for _, f := range open {
 			if k := f.ItemID + "|" + f.Target; !seen[k] {
 				seen[k] = true
-				todo = append(todo, [2]string{f.ItemID, f.Target})
+				conn, _, err := connectionFor(c.Request.Context(), mc, f.ItemID, f.Target)
+				if err != nil {
+					elsewhere++
+					continue
+				}
+				todo = append(todo, job{conn, f.ItemID})
 			}
 		}
 		go func() {
 			defer recoverLog(mc, "retry")
-			for _, t := range todo {
-				if conn, _, err := connectionFor(context.Background(), mc, t[0], t[1]); err == nil {
-					_, _ = conn.publishNow(context.Background(), t[0])
-				}
+			for _, j := range todo {
+				_, _ = j.conn.publishNow(context.Background(), j.item)
 			}
 		}()
-		c.JSON(http.StatusAccepted, gin.H{"retrying": len(todo)})
+		c.JSON(http.StatusAccepted, gin.H{"retrying": len(todo), "elsewhere": elsewhere})
 	})
 
 	// The log: every attempt, filtered on the server.
@@ -617,6 +627,7 @@ type Problem struct {
 	ItemID    string     `json:"itemId"`
 	Title     string     `json:"title"`
 	ImageURL  string     `json:"imageUrl,omitempty"`
+	Source    string     `json:"source"` // "microblog" is retried there, not here
 	Target    string     `json:"target"`
 	Cause     string     `json:"cause"`
 	Error     string     `json:"error"`
@@ -634,7 +645,7 @@ func problems(mc companion.ModuleContext) gin.H {
 		k := f.ItemID + "|" + f.Target
 		p, ok := byKey[k]
 		if !ok {
-			p = &Problem{ItemID: f.ItemID, Target: f.Target, Cause: f.Cause, Error: f.Error, LastAt: f.CreatedAt}
+			p = &Problem{ItemID: f.ItemID, Source: f.Source, Target: f.Target, Cause: f.Cause, Error: f.Error, LastAt: f.CreatedAt}
 			byKey[k] = p
 			order = append(order, k)
 		}

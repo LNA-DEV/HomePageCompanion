@@ -34,7 +34,7 @@ func init() {
 		Import:  importLegacy,
 		UI: &companion.UI{
 			Nav:   []companion.NavEntry{{Label: "Trips", Icon: "map", Page: "", Group: "Content", Order: 35}},
-			Pages: []companion.Page{{Path: "", Element: "trips-page", Title: "Trips"}},
+			Pages: []companion.Page{{Path: "", Element: "trips-page", Title: "Trips"}, {Path: "*", Element: "trips-page", Title: "Trip"}},
 		},
 	})
 }

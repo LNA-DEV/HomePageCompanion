@@ -125,7 +125,8 @@ func routes(mc companion.ModuleContext, r *companion.Router) {
 		}
 		q := mc.DB().Model(&Post{})
 		if term := strings.TrimSpace(c.Query("q")); term != "" {
-			q = q.Where("LOWER(body) LIKE ?", "%"+strings.ToLower(term)+"%")
+			like := "%" + strings.ToLower(term) + "%"
+			q = q.Where("LOWER(body) LIKE ? OR LOWER(slug) LIKE ?", like, like)
 		}
 		var total int64
 		q.Count(&total)
@@ -135,7 +136,11 @@ func routes(mc companion.ModuleContext, r *companion.Router) {
 		for _, p := range posts {
 			views = append(views, adminView(mc, p))
 		}
-		c.JSON(http.StatusOK, gin.H{"items": views, "total": total, "page": page, "limit": limit, "targets": targets(mc)})
+		max := MaxBodyChars
+		if b := blog(mc); b != nil {
+			max = b.MaxBodyChars
+		}
+		c.JSON(http.StatusOK, gin.H{"items": views, "total": total, "page": page, "limit": limit, "targets": targets(mc), "maxBodyChars": max})
 	})
 	a.GET("/posts/:id", func(c *gin.Context) {
 		var p Post

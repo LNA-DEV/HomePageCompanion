@@ -312,6 +312,24 @@ func TestPostsPage(t *testing.T) {
 	}
 }
 
+func TestRetryLeavesOtherSourcesAlone(t *testing.T) {
+	e := setup(t)
+	e.masto.FailOnce(errors.New("status: 503"))
+	e.run(t, "photos-mastodon")
+	// A microblog post that failed: the microblog retries it, not autoupload.
+	mc := e.h.Module("autoupload")
+	mc.Emit(context.Background(), social.EventPostFailed, social.PostFailed{ItemID: "note-1", Kind: "note", Title: "Hello", Source: "microblog",
+		Target: "fake.publisher:mastodon", Platform: "mastodon", Error: "status: 401", Cause: social.CauseAccount, Time: e.now})
+	e.h.Deliver()
+	w := e.h.Admin("GET", "/api/b/autoupload/problems", nil).Body.String()
+	if !strings.Contains(w, `"source":"microblog"`) || !strings.Contains(w, `"total":2`) {
+		t.Fatalf("problems %s", w)
+	}
+	if w := e.h.Admin("POST", "/api/b/autoupload/problems/retry", map[string]string{}); !strings.Contains(w.Body.String(), `"retrying":1`) || !strings.Contains(w.Body.String(), `"elsewhere":1`) {
+		t.Fatalf("retry %s", w.Body)
+	}
+}
+
 func TestActions(t *testing.T) {
 	e := setup(t)
 	e.run(t, "photos-mastodon")

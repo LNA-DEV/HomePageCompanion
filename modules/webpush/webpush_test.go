@@ -77,6 +77,12 @@ func TestSubscribeAndBroadcast(t *testing.T) {
 	if len(rec.sent) != 1 || !strings.Contains(rec.sent[0], "phone") {
 		t.Fatalf("me audience %v", rec.sent)
 	}
+	// The admin UI's broadcast says how many devices it reached.
+	rec.gone["https://push.example/phone"] = true
+	h.Admin("POST", "/api/b/webpush/audiences/me/subscribe", []byte(`{"endpoint":"https://push.example/tablet","keys":{"p256dh":"p","auth":"a"}}`))
+	if w := h.Admin("POST", "/api/b/webpush/audiences/me/broadcast", []byte(`{"title":"Hi","body":"there"}`)); w.Code != 200 || !strings.Contains(w.Body.String(), `"sent":1`) || !strings.Contains(w.Body.String(), `"failed":1`) {
+		t.Fatalf("admin broadcast %d %s", w.Code, w.Body)
+	}
 	var priv []string
 	h.Core.DB().Raw("SELECT value FROM core_secrets WHERE module = 'webpush'").Scan(&priv)
 	if len(priv) != 1 {

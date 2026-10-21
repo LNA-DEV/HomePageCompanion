@@ -139,6 +139,7 @@ export interface Problem {
 	itemId: string;
 	title: string;
 	imageUrl?: string;
+	source: string;
 	target: string;
 	cause: 'account' | 'content' | 'transient';
 	error: string;

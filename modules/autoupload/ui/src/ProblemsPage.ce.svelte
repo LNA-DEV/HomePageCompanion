@@ -47,8 +47,10 @@
 	async function retry(c: Cause | '') {
 		retrying = c || 'all';
 		try {
-			const r = await au.api.post<{ retrying: number }>('problems/retry', { cause: c });
-			au.toast(`Retrying ${r.retrying} ${r.retrying === 1 ? 'post' : 'posts'}`, 'info');
+			const r = await au.api.post<{ retrying: number; elsewhere: number }>('problems/retry', { cause: c });
+			let msg = `Retrying ${r.retrying} ${r.retrying === 1 ? 'post' : 'posts'}`;
+			if (r.elsewhere) msg += `; ${r.elsewhere} from the microblog are retried on its page`;
+			au.toast(msg, 'info');
 			setTimeout(load, 3000);
 		} catch (e) {
 			au.toast(e instanceof Error ? e.message : String(e), 'error');
@@ -117,7 +119,10 @@
 									<button class="w-full flex items-center gap-3 py-2 text-left hover:bg-gray-50 dark:hover:bg-gray-800/50 rounded" onclick={() => (open = p.itemId)}>
 										{#if p.imageUrl}<img src={p.imageUrl} alt="" class="w-10 h-10 rounded object-cover shrink-0" loading="lazy" />{:else}<div class="w-10 h-10 rounded bg-gray-100 dark:bg-gray-800 shrink-0"></div>{/if}
 										<div class="min-w-0 flex-1">
-											<p class="font-medium truncate">{p.title || p.itemId}</p>
+											<p class="font-medium truncate">
+												{p.title || p.itemId}
+												{#if p.source === 'microblog'}<span class="badge bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300 ml-1">microblog</span>{/if}
+											</p>
 											<p class="text-xs text-red-700 dark:text-red-300 truncate" title={p.error}>{targetName(p.target)}: {p.error}</p>
 										</div>
 										<div class="text-xs text-gray-500 text-right shrink-0">

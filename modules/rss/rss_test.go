@@ -131,6 +131,15 @@ func TestMirrorsTheFeed(t *testing.T) {
 	}
 }
 
+func TestLookupByIDAndLink(t *testing.T) {
+	h, _ := setup(t)
+	w := h.Admin("POST", "/api/b/rss/items/lookup", map[string]any{"ids": []string{"a"}, "links": []string{"https://example.com/posts/lofoten/", "https://example.com/nothing"}})
+	got := companiontest.JSON[map[string]map[string]any](h, w)
+	if len(got) != 2 || got["a"]["title"] != "Eisvogel" || got["https://example.com/posts/lofoten/"]["title"] != "Lofoten" || got["https://example.com/posts/lofoten/"]["feed"] != "photos" {
+		t.Fatalf("lookup %s", w.Body)
+	}
+}
+
 func TestAnnouncesOnlyNewItems(t *testing.T) {
 	h, srv := setup(t)
 	src := companiontest.Instance[*rss.Source](h, "rss:photos")

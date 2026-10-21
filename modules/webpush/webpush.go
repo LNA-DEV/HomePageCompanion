@@ -176,21 +176,27 @@ func (a *Audience) Send(ctx context.Context, to string, m notify.Message) error 
 
 // Broadcast delivers to every subscriber of this audience.
 func (a *Audience) Broadcast(ctx context.Context, m notify.Message) error {
+	_, _, err := a.broadcast(ctx, m)
+	return err
+}
+
+// broadcast sends to every subscriber and counts who got it.
+func (a *Audience) broadcast(ctx context.Context, m notify.Message) (sent, failed int, err error) {
 	var subs []Subscription
 	if err := a.ctx.DB().Where("instance = ?", a.ctx.InstanceName()).Find(&subs).Error; err != nil {
-		return err
+		return 0, 0, err
 	}
 	a.ctx.Log().Printf("Sending notifications to %d users", len(subs))
-	sent := 0
 	for _, s := range subs {
 		if err := a.push(ctx, s, m); err != nil {
 			a.ctx.Log().Printf("Failed to send to user %d: %v", s.ID, err)
+			failed++
 			continue
 		}
 		sent++
 	}
 	a.ctx.Metrics().Add("notifications_sent_total", float64(sent), "audience", a.ctx.InstanceName())
-	return nil
+	return sent, failed, nil
 }
 
 var _ notify.Notifier = (*Audience)(nil)
@@ -240,7 +246,9 @@ func subscribe(mc companion.ModuleContext, instance string) gin.HandlerFunc {
 	}
 }
 
-func broadcast(mc companion.ModuleContext, c *gin.Context, name string) {
+// broadcast answers the old API as it did; the admin UI (counts) learns
+// how many devices the message reached.
+func broadcast(mc companion.ModuleContext, c *gin.Context, name string, counts bool) {
 	var m Message
 	if err := c.ShouldBindJSON(&m); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid JSON"})
@@ -255,8 +263,16 @@ func broadcast(mc companion.ModuleContext, c *gin.Context, name string) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "no such audience"})
 		return
 	}
-	_ = a.Broadcast(c.Request.Context(), notify.Message{Title: m.Title, Body: m.Body, URL: m.URL, Icon: m.Icon})
-	c.JSON(http.StatusOK, gin.H{"status": "Broadcast sent"})
+	sent, failed, err := a.broadcast(c.Request.Context(), notify.Message{Title: m.Title, Body: m.Body, URL: m.URL, Icon: m.Icon})
+	if !counts {
+		c.JSON(http.StatusOK, gin.H{"status": "Broadcast sent"})
+		return
+	}
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"sent": sent, "failed": failed})
 }
 
 func routes(mc companion.ModuleContext, r *companion.Router) {
@@ -270,7 +286,7 @@ func routes(mc companion.ModuleContext, r *companion.Router) {
 		c.Data(http.StatusOK, "application/text", []byte(key))
 	})
 	pub.POST("/subscribe", subscribe(mc, companion.DefaultInstance))
-	pub.POST("/broadcast", r.RequireAdmin, func(c *gin.Context) { broadcast(mc, c, companion.DefaultInstance) })
+	pub.POST("/broadcast", r.RequireAdmin, func(c *gin.Context) { broadcast(mc, c, companion.DefaultInstance, false) })
 
 	a := r.Admin
 	a.GET("/subscribers", func(c *gin.Context) {
@@ -303,7 +319,7 @@ func routes(mc companion.ModuleContext, r *companion.Router) {
 	})
 	// Subscribing a device of the operator to another audience.
 	a.POST("/audiences/:instance/subscribe", subscribe(mc, ""))
-	a.POST("/audiences/:instance/broadcast", func(c *gin.Context) { broadcast(mc, c, c.Param("instance")) })
+	a.POST("/audiences/:instance/broadcast", func(c *gin.Context) { broadcast(mc, c, c.Param("instance"), true) })
 	a.GET("/audiences", func(c *gin.Context) {
 		out := []gin.H{}
 		for _, in := range mc.Instances() {

@@ -127,7 +127,10 @@
 								</svg>
 							{/if}
 							{#if p.source === 'microblog'}
-								<p class="text-xs text-gray-500 mt-3">Posted by the microblog; it is managed there.</p>
+								<p class="text-xs text-gray-500 mt-3">
+									Written in the microblog; retry or delete it
+									<a class="underline" href="/b/microblog?q={encodeURIComponent(p.id)}">there</a>.
+								</p>
 							{:else}
 								<div class="flex flex-wrap gap-2 mt-3">
 									{#if cell.state !== 'published'}

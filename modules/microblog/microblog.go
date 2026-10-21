@@ -37,7 +37,7 @@ func init() {
 		Import:     importLegacy,
 		UI: &companion.UI{
 			Nav:   []companion.NavEntry{{Label: "Microblog", Icon: "message-square", Page: "", Group: "Content", Order: 20}},
-			Pages: []companion.Page{{Path: "", Element: "microblog-page", Title: "Microblog"}},
+			Pages: []companion.Page{{Path: "", Element: "microblog-page", Title: "Microblog"}, {Path: "*", Element: "microblog-page", Title: "Microblog post"}},
 		},
 	})
 }

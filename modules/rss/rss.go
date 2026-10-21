@@ -331,21 +331,33 @@ func routes(mc companion.ModuleContext, r *companion.Router) {
 		}
 		c.JSON(http.StatusOK, gin.H{"status": "refreshed"})
 	})
-	// Lookup of items by GUID across all feeds, for other modules' UIs.
+	// Lookup of items across all feeds by GUID or by link, for other
+	// modules' UIs; the answer is keyed by what was asked for.
 	r.Admin.POST("/items/lookup", func(c *gin.Context) {
 		var body struct {
-			IDs []string `json:"ids"`
+			IDs   []string `json:"ids"`
+			Links []string `json:"links"`
 		}
 		if err := c.ShouldBindJSON(&body); err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid JSON"})
 			return
 		}
 		out := map[string]itemView{}
+		view := func(row Item) itemView {
+			return itemView{Item: row.toFeedItem(nil), Feed: row.Instance, RemovedAt: row.RemovedAt}
+		}
 		if len(body.IDs) > 0 {
 			var rows []Item
 			mc.DB().Where("guid IN ?", body.IDs).Find(&rows)
 			for _, row := range rows {
-				out[row.GUID] = itemView{Item: row.toFeedItem(nil), Feed: row.Instance, RemovedAt: row.RemovedAt}
+				out[row.GUID] = view(row)
+			}
+		}
+		if len(body.Links) > 0 {
+			var rows []Item
+			mc.DB().Where("link IN ?", body.Links).Find(&rows)
+			for _, row := range rows {
+				out[row.Link] = view(row)
 			}
 		}
 		c.JSON(http.StatusOK, out)
