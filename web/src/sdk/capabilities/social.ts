@@ -64,6 +64,11 @@ export interface Post {
 	kind: string;
 	text: string;
 	/**
+	 * Title is the item's title, for networks whose posts need one
+	 * (Lemmy); the text does not repeat it.
+	 */
+	title?: string;
+	/**
 	 * ContentWarning is shown before the text where the network supports
 	 * it, else prepended as "CW: …".
 	 */

@@ -174,7 +174,7 @@ func (c *Connection) buildPost(ctx context.Context, item feed.Item, lim social.L
 	if len(caption.NamesCut) > 0 {
 		c.ctx.Log().Printf("%s: %s on %s: names line cut to fit, not named in full: %s", c.name(), item.ID, lim.Platform, strings.Join(caption.NamesCut, ", "))
 	}
-	post := social.Post{ItemID: item.ID, Kind: item.Kind, Text: caption.Text, Mentions: mentionsOf(credits)}
+	post := social.Post{ItemID: item.ID, Kind: item.Kind, Title: item.Title, Text: caption.Text, Mentions: mentionsOf(credits)}
 	if item.Image != nil {
 		post.Images = []social.Image{{URL: item.Image.URL, Alt: item.Image.Alt}}
 	}

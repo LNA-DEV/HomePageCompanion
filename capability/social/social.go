@@ -72,6 +72,9 @@ type Post struct {
 	ItemID string `json:"itemId"`
 	Kind   string `json:"kind"` // photo | article | note
 	Text   string `json:"text"`
+	// Title is the item's title, for networks whose posts need one
+	// (Lemmy); the text does not repeat it.
+	Title string `json:"title,omitempty"`
 	// ContentWarning is shown before the text where the network supports
 	// it, else prepended as "CW: …".
 	ContentWarning string    `json:"contentWarning,omitempty"`

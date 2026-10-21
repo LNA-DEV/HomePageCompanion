@@ -233,6 +233,10 @@
           },
           "text": {
             "type": "string"
+          },
+          "title": {
+            "description": "Title is the item's title, for networks whose posts need one\n(Lemmy); the text does not repeat it.",
+            "type": "string"
           }
         },
         "required": [

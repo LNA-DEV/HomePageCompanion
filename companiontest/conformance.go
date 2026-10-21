@@ -130,11 +130,19 @@ func BlobConformance(t *testing.T, b companion.Bucket, part int) {
 	})
 }
 
+// T is what a conformance suite reports to: a *testing.T, or hpc test's
+// reporter for a service.
+type T interface {
+	Helper()
+	Fatal(args ...any)
+	Fatalf(format string, args ...any)
+}
+
 // PublisherConformance checks a social.publisher/v1 provider against a
 // recorded or fake network: Describe answers, a post with an image goes
 // out and comes back as a Result, and a post without an image is refused
 // with ErrNeedsImage where the target requires one.
-func PublisherConformance(t *testing.T, p social.Publisher, image string) {
+func PublisherConformance(t T, p social.Publisher, image string) {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()

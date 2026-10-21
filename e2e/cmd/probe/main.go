@@ -4,7 +4,8 @@
 // do, so the tests can check the rights from the outside.
 //
 // With PROBE_MODE=web it is a plain web server instead, standing in for a
-// host on the internet ("hello from <PROBE_NAME>").
+// host on the internet ("hello from <PROBE_NAME>"); with =lemmy a fake
+// Lemmy, with =feed a photo feed (package fakes).
 package main
 
 import (
@@ -20,6 +21,7 @@ import (
 	"github.com/LNA-DEV/HomePageCompanion/capability/notify"
 	"github.com/LNA-DEV/HomePageCompanion/capability/social"
 	"github.com/LNA-DEV/HomePageCompanion/companion"
+	"github.com/LNA-DEV/HomePageCompanion/e2e/fakes"
 	"github.com/LNA-DEV/HomePageCompanion/service"
 	"github.com/gin-gonic/gin"
 )
@@ -143,6 +145,15 @@ var info = companion.Info{
 }
 
 func main() {
+	switch os.Getenv("PROBE_MODE") {
+	case "lemmy":
+		// A fake Lemmy, naming itself by PROBE_BASE ("http://lemmy-fake:8080").
+		http.ListenAndServe(":8080", fakes.NewLemmy(os.Getenv("PROBE_BASE")))
+		return
+	case "feed":
+		http.ListenAndServe(":8080", fakes.Feed(os.Getenv("PROBE_BASE"), 3))
+		return
+	}
 	if os.Getenv("PROBE_MODE") == "web" {
 		name := os.Getenv("PROBE_NAME")
 		http.ListenAndServe(":8080", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
