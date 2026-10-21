@@ -116,6 +116,7 @@ for (const dir of dirs) {
 		resolve: {
 			alias: {
 				'@companion/ui/components': path.join(web, 'src/sdk/components.ts'),
+				'@companion/ui/capabilities': path.join(web, 'src/sdk/capabilities'),
 				'@companion/ui': path.join(web, 'src/sdk/index.ts'),
 				$lib: path.join(web, 'src/lib')
 			}

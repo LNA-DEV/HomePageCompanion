@@ -4,6 +4,8 @@ import (
 	"errors"
 	"fmt"
 	"testing"
+
+	"github.com/LNA-DEV/HomePageCompanion/companion/wire"
 )
 
 // The classifier keeps the Pixelfed case: HTTP 500 with the body
@@ -32,6 +34,11 @@ func TestClassify(t *testing.T) {
 		{"needs an image", fmt.Errorf("instagram: %w", ErrNeedsImage), "content", CauseContent, 0},
 		{"other 4xx", errors.New("status: 400 invalid caption"), "client", CauseContent, 400},
 		{"unknown", errors.New("something happened"), "unknown", CauseTransient, 0},
+		// Through a service: the platform's status and the service's own
+		// classification travel in the wire error.
+		{"service 401", &wire.Error{Code: "internal", Message: "login refused", Status: 401}, "auth", CauseAccount, 401},
+		{"service cause", &wire.Error{Code: "internal", Message: "community banned us", Cause: CauseContent}, "unknown", CauseContent, 0},
+		{"service down", &wire.Error{Code: wire.CodeUnavailable, Message: "provider answered 502"}, "unknown", CauseTransient, 0},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

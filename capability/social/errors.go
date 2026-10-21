@@ -21,8 +21,9 @@ type StatusError struct {
 	Err    error
 }
 
-func (e *StatusError) Error() string { return e.Err.Error() }
-func (e *StatusError) Unwrap() error { return e.Err }
+func (e *StatusError) Error() string   { return e.Err.Error() }
+func (e *StatusError) Unwrap() error   { return e.Err }
+func (e *StatusError) HTTPStatus() int { return e.Status }
 
 // statusInErr extracts the first 3-digit HTTP status in an error message;
 // the network clients compose errors like "… status: 401, body: …".
@@ -42,10 +43,12 @@ func Classify(err error) Failure {
 	if err == nil {
 		return Failure{}
 	}
+	// A StatusError, or a call through a service that reports the
+	// platform's status (companion/wire).
 	status := 0
-	var se *StatusError
+	var se interface{ HTTPStatus() int }
 	if errors.As(err, &se) {
-		status = se.Status
+		status = se.HTTPStatus()
 	}
 	msg := err.Error()
 	if status == 0 {
@@ -63,7 +66,16 @@ func Classify(err error) Failure {
 	if errors.Is(err, ErrNotConnected) {
 		code = "auth"
 	}
-	return Failure{Code: code, Cause: causeOf(code), HTTPStatus: status}
+	cause := causeOf(code)
+	// A service may classify its failure itself.
+	var fc interface{ FailureCause() string }
+	if errors.As(err, &fc) {
+		switch c := fc.FailureCause(); c {
+		case CauseAccount, CauseContent, CauseTransient:
+			cause = c
+		}
+	}
+	return Failure{Code: code, Cause: cause, HTTPStatus: status}
 }
 
 func classifyCode(status int, msg string) string {

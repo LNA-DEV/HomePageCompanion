@@ -39,6 +39,10 @@ type Blob interface {
 	Durable() bool
 }
 
+// Both are Go only: services reach the blob store through the core
+// (/core/v1/blobs), and the database not at all.
+//
+//hpc:local
 var (
 	SQLV1  = companion.NewCapability[SQL]("storage.sql", 1)
 	BlobV1 = companion.NewCapability[Blob]("storage.blob", 1)

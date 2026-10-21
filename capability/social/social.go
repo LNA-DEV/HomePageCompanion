@@ -47,7 +47,7 @@ type Interactions interface {
 }
 
 var (
-	PublisherV1    = companion.NewCapability[Publisher]("social.publisher", 1)
+	PublisherV1    = companion.NewCapability[Publisher]("social.publisher", 1, companion.Optional[Lister](), companion.Optional[Deleter]())
 	InteractionsV1 = companion.NewCapability[Interactions]("social.interactions", 1)
 )
 

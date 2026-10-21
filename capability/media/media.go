@@ -13,7 +13,7 @@ type Image interface {
 	// Resize returns the image fitted into the limits: the long edge
 	// shortened, re-encoded as JPEG until it fits MaxBytes. An image that
 	// already fits comes back unchanged.
-	Resize(ctx context.Context, data []byte, lim Limits) ([]byte, error)
+	Resize(ctx context.Context, data []byte, limits Limits) ([]byte, error)
 	// ReadExif returns what the image's EXIF, IPTC and XMP say.
 	ReadExif(ctx context.Context, data []byte) (Metadata, error)
 }

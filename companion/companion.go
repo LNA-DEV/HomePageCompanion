@@ -30,17 +30,23 @@ import (
 
 // Capability is a versioned interface a building block offers or needs, such
 // as social.publisher/v1. Type is the Go interface behind it; the core checks
-// that a provider implements it.
+// that a provider implements it. Optional are interfaces with the optional
+// operations (social.Lister's listPosts): a provider may implement them.
 type Capability struct {
-	Name  string
-	Major int
-	Type  reflect.Type
+	Name     string
+	Major    int
+	Type     reflect.Type
+	Optional []reflect.Type
 }
 
-// NewCapability declares a capability backed by the Go interface T.
-func NewCapability[T any](name string, major int) Capability {
-	return Capability{Name: name, Major: major, Type: reflect.TypeFor[T]()}
+// NewCapability declares a capability backed by the Go interface T, with
+// the optional operations of the interfaces Optional[…]() names.
+func NewCapability[T any](name string, major int, optional ...reflect.Type) Capability {
+	return Capability{Name: name, Major: major, Type: reflect.TypeFor[T](), Optional: optional}
 }
+
+// Optional names an interface of optional operations for NewCapability.
+func Optional[T any]() reflect.Type { return reflect.TypeFor[T]() }
 
 // String is the capability's full name, e.g. "social.publisher/v1".
 func (c Capability) String() string { return fmt.Sprintf("%s/v%d", c.Name, c.Major) }

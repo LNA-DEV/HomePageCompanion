@@ -12,9 +12,9 @@ import (
 // Notifier delivers messages.
 type Notifier interface {
 	// Send delivers to one recipient of the notifier (a subscription id).
-	Send(ctx context.Context, to string, m Message) error
+	Send(ctx context.Context, to string, message Message) error
 	// Broadcast delivers to every recipient.
-	Broadcast(ctx context.Context, m Message) error
+	Broadcast(ctx context.Context, message Message) error
 }
 
 var NotifyV1 = companion.NewCapability[Notifier]("notify", 1)

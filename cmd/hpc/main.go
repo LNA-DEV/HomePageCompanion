@@ -16,6 +16,9 @@ const usage = `usage: hpc <command> [flags]
 commands:
   build [-f build.yaml] [-o companion] [--shell dir | --no-shell] [--work dir] [--version v]
                   compile the modules of build.yaml into one program
+  gen [-openapi dir] [-ts dir] [-check] [packages]
+                  adapters, OpenAPI and TypeScript types from the capabilities
+                  (default ./capability/...)
   backup, restore, migrate, secrets, config, modules, version
                   run the companion's command of that name
                   (the program: $HPC_COMPANION, ./companion or companion on PATH)
@@ -31,6 +34,8 @@ func main() {
 	switch cmd {
 	case "build":
 		err = buildCmd(args)
+	case "gen":
+		err = genCmd(args)
 	case "backup", "restore", "migrate", "secrets", "config", "modules", "version":
 		err = forward(cmd, args)
 	case "help", "-h", "--help":

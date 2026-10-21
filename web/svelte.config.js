@@ -18,6 +18,7 @@ const config = {
 		alias: {
 			// The longer one first: the first match wins.
 			'@companion/ui/components': 'src/sdk/components.ts',
+			'@companion/ui/capabilities': 'src/sdk/capabilities',
 			'@companion/ui': 'src/sdk/index.ts'
 		}
 	}
