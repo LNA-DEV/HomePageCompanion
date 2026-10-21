@@ -8,6 +8,7 @@ use (
 	./modules/blob-s3
 	./modules/bluesky
 	./modules/db-sqlite
+	./modules/gbif
 	./modules/instagram
 	./modules/interactions
 	./modules/mastodon
