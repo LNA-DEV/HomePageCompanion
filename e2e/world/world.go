@@ -17,12 +17,14 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"os"
 	"path/filepath"
 	"sync/atomic"
 	"time"
 
+	"github.com/LNA-DEV/HomePageCompanion/companion/wire"
 	"github.com/LNA-DEV/HomePageCompanion/core"
 	_ "github.com/LNA-DEV/HomePageCompanion/e2e" // every building block
 	bskyapi "github.com/LNA-DEV/HomePageCompanion/modules/bluesky/api"
@@ -31,6 +33,7 @@ import (
 	"github.com/LNA-DEV/HomePageCompanion/modules/interactions"
 	"github.com/LNA-DEV/HomePageCompanion/modules/threads"
 	thapi "github.com/LNA-DEV/HomePageCompanion/modules/threads/api"
+	"github.com/LNA-DEV/HomePageCompanion/service"
 )
 
 // AdminKey is the setup's admin key.
@@ -46,6 +49,9 @@ type Options struct {
 	// Core adjusts the core's options, e.g. the admin shell for the UI
 	// server.
 	Core func(*core.Options)
+	// Services adds the notes service, with its UI in the shell's
+	// sandboxed frame (notes.go).
+	Services bool
 }
 
 // World is a running setup.
@@ -64,12 +70,15 @@ type World struct {
 	Data   string
 	Core   *core.Core
 
-	opts    Options
-	tempDir bool
-	ln      net.Listener
-	srv     *http.Server
-	handler atomic.Pointer[http.Handler]
-	restore []func()
+	opts         Options
+	tempDir      bool
+	servicesAddr string
+	notes        *httptest.Server
+	notesSvc     *service.Service
+	ln           net.Listener
+	srv          *http.Server
+	handler      atomic.Pointer[http.Handler]
+	restore      []func()
 }
 
 // Start builds the fakes, writes companion.yaml and starts the core.
@@ -123,6 +132,12 @@ func Start(o Options) (*World, error) {
 		return nil, err
 	}
 	w.ln, w.URL = ln, "http://"+ln.Addr().String()
+	if o.Services {
+		if err := w.startServices(); err != nil {
+			w.Close()
+			return nil, err
+		}
+	}
 	if err := os.WriteFile(w.Config, []byte(w.config()), 0o600); err != nil {
 		w.Close()
 		return nil, err
@@ -145,8 +160,33 @@ func Start(o Options) (*World, error) {
 	return w, nil
 }
 
+// startServices runs the notes service next to the core, as hpc apply
+// would have recorded it in companion.lock.
+func (w *World) startServices() error {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		return err
+	}
+	w.servicesAddr = ln.Addr().String()
+	ln.Close()
+	svc, err := service.New(service.Options{
+		CoreURL:   "http://" + w.servicesAddr,
+		TokenFile: filepath.Join(w.Data, "services", "notes", "run", "token"),
+		DataDir:   filepath.Join(w.Dir, "notes-data"),
+		Logs:      w.opts.Logs,
+	}, notesInfo())
+	if err != nil {
+		return err
+	}
+	w.notesSvc, w.notes = svc, httptest.NewServer(svc)
+	lock := wire.Lock{Services: map[string]wire.LockedService{
+		"notes": {From: "path:e2e/world", URL: w.notes.URL, Manifest: svc.Manifest(), Grants: wire.Grants{Volume: true}},
+	}}
+	return lock.Write(filepath.Join(w.Dir, wire.LockFile))
+}
+
 func (w *World) startCore() error {
-	opts := core.Options{ConfigPath: w.Config, DataDir: w.Data, Logs: w.opts.Logs}
+	opts := core.Options{ConfigPath: w.Config, DataDir: w.Data, Logs: w.opts.Logs, ServicesListen: w.servicesAddr}
 	if w.opts.Core != nil {
 		w.opts.Core(&opts)
 	}
@@ -174,6 +214,10 @@ func (w *World) Close() {
 	}
 	if w.Core != nil {
 		w.Core.Stop(context.Background())
+	}
+	if w.notes != nil {
+		w.notes.Close()
+		w.notesSvc.Close(context.Background())
 	}
 	for _, s := range []interface{ Close() }{w.Feed, w.Mastodon, w.Pixelfed, w.Bluesky, w.Instagram, w.Threads, w.Push} {
 		if s != nil && !isNil(s) {
@@ -208,6 +252,10 @@ func isNil(v any) bool {
 var Connections = []string{"photos-mastodon", "photos-pixelfed", "photos-bluesky", "photos-instagram", "photos-threads"}
 
 func (w *World) config() string {
+	services := ""
+	if w.notes != nil {
+		services = fmt.Sprintf("services:\n  notes:\n    url: %s\n    instances:\n      main: {}\n", w.notes.URL)
+	}
 	return fmt.Sprintf(`core:
   domain: example.com
   adminKey: %s
@@ -261,7 +309,7 @@ modules:
     config:
       routing: routing
       media: media
-`, AdminKey, w.URL, w.Feed.URL, w.Feed.URL, w.Mastodon.URL, w.Pixelfed.URL, w.Bluesky.URL)
+`, AdminKey, w.URL, w.Feed.URL, w.Feed.URL, w.Mastodon.URL, w.Pixelfed.URL, w.Bluesky.URL) + services
 }
 
 // Do sends a request with the admin key; body is JSON unless it is

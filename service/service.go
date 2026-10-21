@@ -287,6 +287,8 @@ func (s *Service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		s.event(w, r, name, body)
 	case strings.HasPrefix(p, "/api/") || strings.HasPrefix(p, "/public/") || p == "/public":
 		s.router.ServeHTTP(w, r)
+	case strings.HasPrefix(p, "/ui/") && r.Method == http.MethodGet:
+		s.serveUI(w, r, strings.TrimPrefix(p, "/ui/"))
 	default:
 		http.NotFound(w, r)
 	}

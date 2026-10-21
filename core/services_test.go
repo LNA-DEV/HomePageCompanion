@@ -16,6 +16,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"testing/fstest"
 	"time"
 
 	"github.com/LNA-DEV/HomePageCompanion/capability/notify"
@@ -115,8 +116,12 @@ var remoteInfo = companion.Info{
 	Slots:      []companion.Slot{{Name: "notify", Needs: notify.NotifyV1, Optional: true}},
 	Subscribes: []string{"t.ping/v1"},
 	Routes: func(mc companion.ModuleContext, r *companion.Router) {
-		r.Admin.GET("/hello", func(g *gin.Context) { g.String(http.StatusOK, "hello from %s", mc.ModuleID()) })
+		r.Admin.GET("/hello", func(g *gin.Context) { g.String(http.StatusOK, "hello from %s%s", mc.ModuleID(), g.Query("uiToken")) })
 		r.Public.GET("/open", func(g *gin.Context) { g.String(http.StatusOK, "open") })
+	},
+	UI: &companion.UI{
+		Files: fstest.MapFS{"index.html": {Data: []byte("<p>remote ui</p>")}, "app.js": {Data: []byte("console.log(1)")}},
+		Pages: []companion.Page{{Path: "", Title: "Remote"}},
 	},
 }
 
@@ -638,5 +643,73 @@ func TestServiceLostItsConfiguration(t *testing.T) {
 			t.Fatalf("not configured again: %v", err)
 		}
 		time.Sleep(20 * time.Millisecond)
+	}
+}
+
+// A service's UI comes through a token valid only for it, sandboxed by the
+// CSP even outside the shell's frame.
+func TestServiceUI(t *testing.T) {
+	rs := startRemote(t, allGrants, remoteConfig)
+	h := rs.h
+	waitRunning(t, h, "remote:main", true)
+
+	if w := h.Public("POST", "/api/core/services/remote/ui-token", nil); w.Code != http.StatusUnauthorized {
+		t.Fatalf("a token without the admin: %d", w.Code)
+	}
+	if w := h.Admin("POST", "/api/core/services/t.consumer/ui-token", nil); w.Code != http.StatusNotFound {
+		t.Fatalf("a token for a module: %d", w.Code)
+	}
+	tok := companiontest.JSON[struct {
+		Token string `json:"token"`
+		Base  string `json:"base"`
+	}](h, h.Admin("POST", "/api/core/services/remote/ui-token", nil))
+	if tok.Base != "/ui/s/"+tok.Token+"/" {
+		t.Fatalf("token %+v", tok)
+	}
+
+	w := h.Public("GET", tok.Base+"index.html", nil)
+	if w.Code != 200 || w.Body.String() != "<p>remote ui</p>" {
+		t.Fatalf("the UI: %d %q", w.Code, w.Body.String())
+	}
+	if csp := w.Header().Get("Content-Security-Policy"); !strings.Contains(csp, "sandbox allow-scripts allow-forms") {
+		t.Fatalf("CSP %q", csp)
+	}
+	if w.Header().Get("Referrer-Policy") != "no-referrer" {
+		t.Fatal("the token could leak in a Referer")
+	}
+	if w := h.Public("GET", tok.Base+"app.js", nil); w.Code != 200 || w.Body.String() != "console.log(1)" {
+		t.Fatalf("a UI file: %d", w.Code)
+	}
+	for name, path := range map[string]string{
+		"forged":  "/ui/s/" + strings.Replace(tok.Token, ".", ".9", 1) + "/index.html",
+		"expired": "/ui/s/" + core.UIToken(h.Core, "remote", time.Now().Add(-2*time.Hour)) + "/index.html",
+	} {
+		if w := h.Public("GET", path, nil); w.Code != http.StatusUnauthorized {
+			t.Errorf("%s token: %d", name, w.Code)
+		}
+	}
+	if w := h.Admin("GET", "/ui/b/remote/index.html", nil); w.Code != http.StatusNotFound {
+		t.Fatalf("a service's UI without a token: %d", w.Code)
+	}
+
+	// The token opens the service's API and nothing else.
+	bearer := func(path string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest("GET", path, nil)
+		req.Header.Set("Authorization", "Bearer "+tok.Token)
+		rec := httptest.NewRecorder()
+		h.Core.ServeHTTP(rec, req)
+		return rec
+	}
+	if w := bearer("/api/b/remote/hello"); w.Code != 200 || w.Body.String() != "hello from remote" {
+		t.Fatalf("the service's API with its UI token: %d %q", w.Code, w.Body.String())
+	}
+	for _, p := range []string{"/api/core/instances", "/api/b/t.consumer/hello", "/metrics"} {
+		if w := bearer(p); w.Code != http.StatusUnauthorized {
+			t.Errorf("%s with a service's UI token: %d", p, w.Code)
+		}
+	}
+	// In the query (an <img> of the UI), taken out before the service.
+	if w := h.Public("GET", "/api/b/remote/hello?uiToken="+tok.Token, nil); w.Code != 200 || w.Body.String() != "hello from remote" {
+		t.Fatalf("?uiToken=: %d %q", w.Code, w.Body.String())
 	}
 }

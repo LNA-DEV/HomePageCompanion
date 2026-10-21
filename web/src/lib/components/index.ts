@@ -8,3 +8,4 @@ export { default as SearchInput } from './SearchInput.svelte';
 export { default as PlatformBadge } from './PlatformBadge.svelte';
 export { default as ModuleElement } from './ModuleElement.svelte';
 export { default as Toasts } from './Toasts.svelte';
+export { default as ServiceFrame } from './ServiceFrame.svelte';

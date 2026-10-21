@@ -21,3 +21,9 @@ func AllowLoopbackEgress() (restore func()) {
 	egressAllowLoopback = true
 	return func() { egressAllowLoopback = false }
 }
+
+// UIToken issues a service UI token as of now.
+func UIToken(c *Core, id string, now time.Time) string {
+	t, _ := c.services.uiToken(id, now)
+	return t
+}

@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { PageHeader, ModuleElement, Loading } from '$lib/components';
+	import { PageHeader, ModuleElement, Loading, ServiceFrame } from '$lib/components';
 	import { core, type Overview, type MetricsPoint, type UIModule, type Widget } from '$lib/shell/core';
 	import { manifest } from '$lib/shell/session';
 	import { toast } from '$lib/shell/toast';
@@ -133,7 +133,11 @@
 					{#if widget.title}
 						<h2 class="text-sm font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 mb-3">{widget.title}</h2>
 					{/if}
-					<ModuleElement {module} tag={widget.element} />
+					{#if module.service}
+						<ServiceFrame {module} widget={widget.element} />
+					{:else}
+						<ModuleElement {module} tag={widget.element} />
+					{/if}
 				</section>
 			{/each}
 		</div>

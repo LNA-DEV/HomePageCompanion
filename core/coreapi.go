@@ -36,6 +36,7 @@ func (c *Core) coreAPI(g *gin.RouterGroup) {
 	a.POST("/events/retry", func(g *gin.Context) {
 		g.JSON(http.StatusOK, gin.H{"requeued": c.events.retryFailed()})
 	})
+	a.POST("/services/:id/ui-token", c.issueUIToken)
 	a.GET("/logs", c.getLogs)
 	a.POST("/client-logs", c.ingestClientLogs)
 	a.GET("/metrics/history", func(g *gin.Context) { g.JSON(http.StatusOK, c.metrics.historyCopy()) })
@@ -74,9 +75,10 @@ func (c *Core) uiManifest(g *gin.Context) {
 		}
 		sort.Strings(m.Instances)
 		if c.services.isService(id) {
+			// Its pages and widgets come from the service in an iframe,
+			// /ui/s/<token>/index.html.
 			m.Service = true
-			m.HasUI = b.info.UI != nil
-			m.Entry = "/ui/b/" + id + "/index.html"
+			m.HasUI = b.info.UI != nil && (len(b.info.UI.Pages) > 0 || len(b.info.UI.Widgets) > 0)
 		} else if companion.UIFiles(b.info) != nil {
 			m.HasUI = true
 			m.Entry = "/ui/b/" + id + "/entry.js"

@@ -127,3 +127,27 @@ The container runs as a user other than root, on a read-only file system with
 `/tmp` in memory, without capabilities. The proxy refuses hosts outside the
 grant with `403`; outside Docker (a service run by hand, `url:` in
 companion.yaml) it needs `Proxy-Authorization: Basic <service>:<token>`.
+
+## The admin UI
+
+A service with `ui` in its manifest (nav entries, pages, widgets as for a
+module; `element` may be empty) answers `GET /ui/<file>`. The shell shows
+`/ui/index.html?page=<page path>&path=<rest>` (or `?widget=<element>`) in a
+sandboxed iframe, an opaque origin: no cookies, no storage, no access to the
+shell. Talk to the shell with the SDK, one ES module the core serves:
+
+```html
+<script type="module">
+  import { connect } from '/ui/sdk/companion-ui.js';
+  const c = connect('lemmy');
+  const posts = await c.api.get('posts');   // your /api/posts, through the shell
+  c.toast('Saved', 'success');
+  c.navigate('settings');                    // /b/lemmy/settings in the shell
+</script>
+```
+
+Without the SDK the bridge is `postMessage` to `window.parent` with `'*'`:
+`{type: "ready"}` first; then `{type: "api", id, method, path, body}` (answered
+with `{type: "api", id, status, body}`), `{type: "navigate", to}`,
+`{type: "toast", message, kind}`, `{type: "resize", height}`. The shell sends
+`{type: "init", page, path, widget, dark, token}` and `{type: "theme", dark}`.

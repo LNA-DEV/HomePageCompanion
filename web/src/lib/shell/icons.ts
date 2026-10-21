@@ -22,6 +22,7 @@ import {
 	ScrollText,
 	Send,
 	Settings,
+	StickyNote,
 	TriangleAlert,
 	Users
 } from 'lucide-svelte';
@@ -47,6 +48,7 @@ const icons: Record<string, typeof Puzzle> = {
 	'scroll-text': ScrollText,
 	send: Send,
 	settings: Settings,
+	'sticky-note': StickyNote,
 	'triangle-alert': TriangleAlert,
 	users: Users
 };

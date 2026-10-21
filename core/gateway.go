@@ -84,7 +84,7 @@ func (c *Core) rebuildGateway() error {
 		return fmt.Errorf("TRUSTED_PROXIES: %w", err)
 	}
 
-	r.Use(cors.New(cors.Config{
+	strict := cors.New(cors.Config{
 		AllowOriginFunc: func(origin string) bool {
 			f := c.cfg()
 			return originAllowed(origin, domainRegex(f.Core.Domain), f.Core.ExtraOrigins)
@@ -94,7 +94,22 @@ func (c *Core) rebuildGateway() error {
 		ExposeHeaders:    []string{"Content-Length"},
 		AllowCredentials: true,
 		MaxAge:           12 * time.Hour,
-	}))
+	})
+	r.Use(func(g *gin.Context) {
+		// A service's UI runs in a sandboxed frame, an opaque origin
+		// ("null"): its module scripts load with CORS, from its own files
+		// (a token in the path) and from the SDK, both without credentials.
+		if p := g.Request.URL.Path; strings.HasPrefix(p, "/ui/s/") || strings.HasPrefix(p, "/ui/sdk/") {
+			g.Header("Access-Control-Allow-Origin", "*")
+			if g.Request.Method == http.MethodOptions {
+				g.AbortWithStatus(http.StatusNoContent)
+				return
+			}
+			g.Next()
+			return
+		}
+		strict(g)
+	})
 	r.Use(c.measure())
 
 	r.GET("/health", func(g *gin.Context) {
@@ -160,6 +175,8 @@ func (c *Core) rebuildGateway() error {
 	c.services.routes(r, admin)
 
 	r.GET("/ui/b/:id/*file", c.serveModuleUI)
+	r.GET("/ui/s/:token/*file", c.serveServiceUI)
+	r.GET("/ui/sdk/*file", c.serveUISDK)
 	r.NoRoute(c.serveShell)
 
 	var h http.Handler = r

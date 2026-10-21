@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"testing/fstest"
 	"time"
 
 	"github.com/LNA-DEV/HomePageCompanion/capability/feed"
@@ -235,5 +236,43 @@ func TestConfigureCallsJobsEvents(t *testing.T) {
 	call(t, srv, "/lifecycle/configure", "", strings.Replace(cfg, "lemmy.world", "lemmy.ml", 1), nil)
 	if !main.stopped {
 		t.Fatal("changed instance kept")
+	}
+}
+
+func TestServeUI(t *testing.T) {
+	ui := info
+	ui.ID = "poster-ui"
+	ui.UI = &companion.UI{Files: fstest.MapFS{"entry.js": {Data: []byte("customElements.define('poster-page', class extends HTMLElement {})")}},
+		Pages: []companion.Page{{Path: "", Element: "poster-page"}}}
+	s, err := service.New(service.Options{Token: key, DataDir: t.TempDir(), Logs: io.Discard}, ui)
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := httptest.NewServer(s)
+	defer srv.Close()
+	get := func(path string) (int, string, string) {
+		req, _ := http.NewRequest("GET", srv.URL+path, nil)
+		wire.Sign(req, nil, []byte(key), time.Now())
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		b, _ := io.ReadAll(resp.Body)
+		return resp.StatusCode, resp.Header.Get("Content-Type"), string(b)
+	}
+	// A module's UI has no index.html: one is made that places the element.
+	code, ct, body := get("/ui/index.html?element=poster-page")
+	if code != 200 || !strings.HasPrefix(ct, "text/html") || !strings.Contains(body, `src="entry.js"`) || !strings.Contains(body, `data-module="poster-ui"`) {
+		t.Fatalf("frame page: %d %s\n%s", code, ct, body)
+	}
+	if code, ct, _ := get("/ui/entry.js"); code != 200 || !strings.Contains(ct, "javascript") {
+		t.Fatalf("entry.js: %d %s", code, ct)
+	}
+	if code, _, _ := get("/ui/../service.go"); code != 404 {
+		t.Fatalf("outside the UI files: %d", code)
+	}
+	if resp, _ := http.Get(srv.URL + "/ui/entry.js"); resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("unsigned: %d", resp.StatusCode)
 	}
 }

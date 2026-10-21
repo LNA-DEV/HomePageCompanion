@@ -96,7 +96,7 @@ func attachUI(dir string) {
 
 // serveWorld runs the integration setup until SIGTERM.
 func serveWorld(listen, shell string) {
-	w, err := world.Start(world.Options{Listen: listen, Seed: true, Logs: os.Stderr, Core: func(o *core.Options) {
+	w, err := world.Start(world.Options{Listen: listen, Seed: true, Services: true, Logs: os.Stderr, Core: func(o *core.Options) {
 		if _, err := fs.Stat(os.DirFS(shell), "index.html"); err == nil {
 			o.Shell = os.DirFS(shell)
 		} else {

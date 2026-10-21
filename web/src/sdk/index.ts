@@ -3,6 +3,11 @@
 // element calls connect("<id>") and gets an authenticated client for its own
 // API under /api/b/<id>/, the shell's navigation and its notifications. The
 // session cookie authenticates every call; no element ever sees a key.
+//
+// A service's UI runs in a sandboxed iframe of the shell instead, with no
+// cookie and no access to the shell. There the same calls go over
+// postMessage to the shell, which makes them with a token valid only for
+// that service (the bridge, below); the code using connect() is the same.
 
 export class ApiError extends Error {
 	constructor(
@@ -57,6 +62,7 @@ declare global {
 }
 
 function shell(): Shell {
+	if (inFrame()) return frameShell;
 	return (
 		window.companionShell ?? {
 			navigate: (to) => window.location.assign(to),
@@ -103,6 +109,7 @@ async function call<T>(url: string, init: RequestInit): Promise<T> {
 
 /** client is an API client under base ("/api/b/trips"). */
 export function client(base: string): Api {
+	if (inFrame()) return frameClient(base);
 	const join = (p: string) => base + (p === '' || p.startsWith('/') || p.startsWith('?') ? p : '/' + p);
 	const json = (method: string, path: string, body?: unknown) =>
 		call(join(path), {
@@ -142,6 +149,114 @@ export function connect(module: string | Element): Companion {
 		toast: (message, kind = 'info') => shell().toast(message, kind)
 	};
 }
+
+// ---- the bridge: a service's UI in the shell's sandboxed iframe ----
+
+/** inFrame reports whether the UI runs in the shell's iframe (a service). */
+export function inFrame(): boolean {
+	return typeof window !== 'undefined' && window.parent !== window;
+}
+
+type Reply = { status: number; body: unknown };
+const pending = new Map<number, (r: Reply) => void>();
+let seq = 0;
+let started = false;
+let frameToken = '';
+
+function post(msg: Record<string, unknown>): void {
+	// The shell's origin is the page's, but this document's is opaque:
+	// only '*' reaches it. The shell checks that a message comes from its
+	// own iframe.
+	window.parent.postMessage({ ...msg, companion: 1 }, '*');
+}
+
+function startBridge(): void {
+	if (started) return;
+	started = true;
+	const m = location.pathname.match(/^\/ui\/s\/([^/]+)\//);
+	if (m) frameToken = m[1];
+	window.addEventListener('message', (e) => {
+		if (e.source !== window.parent || !e.data || typeof e.data !== 'object') return;
+		const d = e.data as Record<string, unknown>;
+		if (d.type === 'api' && typeof d.id === 'number') {
+			pending.get(d.id)?.({ status: Number(d.status), body: d.body });
+			pending.delete(d.id);
+		} else if (d.type === 'init' || d.type === 'theme') {
+			document.documentElement.classList.toggle('dark', !!d.dark);
+			if (typeof d.token === 'string') frameToken = d.token;
+		}
+	});
+	// Links to the shell's pages navigate the shell, not the iframe.
+	document.addEventListener('click', (e) => {
+		const a = (e.target as Element | null)?.closest?.('a[href]') as HTMLAnchorElement | null;
+		const href = a?.getAttribute('href') ?? '';
+		if (a && href.startsWith('/') && !href.startsWith('//') && !href.startsWith('/ui/') && !a.target) {
+			e.preventDefault();
+			post({ type: 'navigate', to: href });
+		}
+	});
+	const report = () => post({ type: 'resize', height: document.documentElement.scrollHeight });
+	new ResizeObserver(report).observe(document.documentElement);
+	post({ type: 'ready' });
+}
+
+function bridgeCall<T>(method: string, path: string, extra: Record<string, unknown>): Promise<T> {
+	startBridge();
+	const id = ++seq;
+	return new Promise<T>((resolve, reject) => {
+		pending.set(id, ({ status, body }) => {
+			if (status >= 200 && status < 300) {
+				resolve(body as T);
+				return;
+			}
+			const msg =
+				body && typeof body === 'object' && 'error' in body
+					? String((body as { error: unknown }).error)
+					: `HTTP ${status}`;
+			reject(new ApiError(status, msg, body));
+		});
+		post({ type: 'api', id, method, path, ...extra });
+	});
+}
+
+const frameShell: Shell = {
+	navigate: (to) => post({ type: 'navigate', to }),
+	toast: (message, kind) => post({ type: 'toast', message, kind }),
+	unauthorized: () => {}
+};
+
+/** frameClient: the building block's own API through the shell; nothing
+ * else is reachable from a service's UI. */
+function frameClient(base: string): Api {
+	const own = base.match(/^\/api\/b\/([^/]+)/);
+	const prefix = own ? base.slice(own[0].length).replace(/^\//, '') : '';
+	const join = (p: string) => [prefix, p.replace(/^\//, '')].filter(Boolean).join('/');
+	const refuse = <T>(): Promise<T> => Promise.reject(new ApiError(403, `${base} is not reachable from a service's UI`));
+	if (!own) {
+		return {
+			get: refuse,
+			post: refuse,
+			put: refuse,
+			del: refuse,
+			upload: refuse,
+			url: () => ''
+		};
+	}
+	return {
+		get: <T>(path: string, query?: Query) => bridgeCall<T>('GET', withQuery(join(path), query), {}),
+		post: <T>(path: string, body?: unknown) => bridgeCall<T>('POST', join(path), { body }),
+		put: <T>(path: string, body?: unknown) => bridgeCall<T>('PUT', join(path), { body }),
+		del: <T>(path: string) => bridgeCall<T>('DELETE', join(path), {}),
+		upload: <T>(path: string, form: FormData) => bridgeCall<T>('POST', join(path), { form: [...form.entries()] }),
+		// For <img src>: the token is valid for this service's API only.
+		url: (path: string, query?: Query) => {
+			startBridge();
+			return withQuery(`/api/b/${own[1]}/${join(path)}`, { ...query, uiToken: frameToken });
+		}
+	};
+}
+
+if (inFrame()) startBridge();
 
 /** injectStyles adds a module's CSS to the page once. Module elements live
  * in the light DOM, so the shell's base styles apply to them too. */

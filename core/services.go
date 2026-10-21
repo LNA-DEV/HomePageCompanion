@@ -1064,7 +1064,8 @@ func (m *serviceManager) forward(b *svcBlock, admin gin.HandlerFunc) gin.Handler
 			}
 			g.Header("Access-Control-Allow-Origin", "*")
 			target = "/public" + rest
-		} else {
+		} else if !m.uiTokenFor(g, b.id) {
+			// The admin, or the service's own UI through the shell.
 			admin(g)
 			if g.IsAborted() {
 				return
@@ -1114,8 +1115,8 @@ func (b *svcBlock) proxy(g *gin.Context, target string) {
 	io.Copy(g.Writer, resp.Body)
 }
 
-// serveUI serves a service's UI files (§5.7); the sandboxed iframe comes
-// with Stage 3c.
+// serveUI answers /ui/b/<service>/…: a service's UI is reached only
+// through a UI token, /ui/s/<token>/… (serviceui.go).
 func (m *serviceManager) serveUI(g *gin.Context, id, file string) {
 	g.Status(http.StatusNotFound)
 }
