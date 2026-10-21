@@ -1,5 +1,5 @@
 import { sveltekit } from '@sveltejs/kit/vite';
-import { defineConfig } from 'vite';
+import { defineConfig, loadEnv } from 'vite';
 import { SvelteKitPWA } from '@vite-pwa/sveltekit';
 
 export default defineConfig({
@@ -34,12 +34,17 @@ export default defineConfig({
 			}
 		})
 	],
+	// The dev server in front of a companion (hpc dev sets COMPANION_DEV_URL):
+	// its API, the module and service UIs, health and metrics.
 	server: {
-		proxy: {
-			'/api': {
-				target: 'http://localhost:8080',
-				changeOrigin: true
-			}
-		}
+		proxy: Object.fromEntries(
+			['/api', '/ui/', '/health', '/metrics'].map((p) => [
+				p,
+				{
+					target: loadEnv('development', '.', 'COMPANION_').COMPANION_DEV_URL ?? 'http://localhost:8080',
+					changeOrigin: true
+				}
+			])
+		)
 	}
 });

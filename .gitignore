@@ -18,19 +18,18 @@
 # vendor/
 
 # Go workspace file
-go.work
-go.work.sum
 
 # env file
 .env
 
 companion.db
-src/data/config.yaml
 
 __debug*
 
-# Built binary
-home-page-companion
+# Built binaries (the old one, and hpc build's default output)
+/home-page-companion
+# hpc build -o companion at the root writes into the SDK directory
+/companion/companion
 
 # Node.js / SvelteKit
 web/node_modules/
@@ -41,8 +40,25 @@ web/.svelte-kit/
 *.db-journal
 *.db-wal
 *.db-shm
-src/cmd/migrate-guids/main.go
-src/data/logs/**
-src/data/microblog/**
-src/data/trips/**
 .inbox/**
+
+# The old installation the migration's end-to-end test moves over.
+!e2e/testdata/legacy/.env
+!e2e/testdata/legacy/companion.db
+
+# Module UIs, staged and built by web/scripts/build-modules.mjs
+web/.modules/
+web/build-modules/
+
+# Playwright
+web/test-results/
+web/playwright-report/
+web/ui-screenshots/
+
+# hpc apply: the generated compose file and the git sources it builds
+/compose.generated.yml
+/.hpc/
+
+# Python
+__pycache__/
+*.pyc

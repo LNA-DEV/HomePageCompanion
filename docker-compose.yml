@@ -1,28 +1,17 @@
+# One container: the admin shell, the API and the website's endpoints, on
+# port 8080. Put companion.yaml (and .env) into ./data; "companion migrate"
+# writes them from an old installation's data/config.yaml.
 services:
   companion:
     build:
       context: .
       dockerfile: Dockerfile
+    # or the published image: ghcr.io/lna-dev/homepagecompanion:latest
+    ports:
+      - "8080:8080"
     volumes:
-      - ./src/data:/app/data
+      - ./data:/app/data
     env_file:
       - path: .env
         required: false
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 10s
-    restart: unless-stopped
-
-  web:
-    build:
-      context: ./web
-      dockerfile: Dockerfile
-    ports:
-      - "8080:80"
-    depends_on:
-      companion:
-        condition: service_healthy
     restart: unless-stopped

@@ -1,0 +1,285 @@
+{
+  "components": {
+    "responses": {
+      "Error": {
+        "content": {
+          "application/json": {
+            "schema": {
+              "properties": {
+                "error": {
+                  "properties": {
+                    "cause": {
+                      "description": "the provider's own classification",
+                      "enum": [
+                        "account",
+                        "content",
+                        "transient"
+                      ],
+                      "type": "string"
+                    },
+                    "code": {
+                      "description": "a known code, or another one",
+                      "examples": [
+                        "bad_request",
+                        "internal",
+                        "not_found",
+                        "unavailable",
+                        "unsupported"
+                      ],
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "description": "the HTTP status the platform answered",
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message"
+                  ],
+                  "type": "object"
+                }
+              },
+              "required": [
+                "error"
+              ],
+              "type": "object"
+            }
+          }
+        },
+        "description": "the operation failed"
+      }
+    },
+    "schemas": {
+      "Image": {
+        "description": "Image is an item's image. URL is the one to post (the feed's\nmedia:content); OriginalURL is the full file with its metadata intact\n(the enclosure), when the feed has one.",
+        "properties": {
+          "alt": {
+            "type": "string"
+          },
+          "originalUrl": {
+            "type": "string"
+          },
+          "url": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "url"
+        ],
+        "type": "object"
+      },
+      "Item": {
+        "description": "Item is one post of a feed.",
+        "properties": {
+          "categories": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "copyright": {
+            "description": "the feed's copyright line",
+            "type": "string"
+          },
+          "description": {
+            "description": "the feed's HTML",
+            "type": "string"
+          },
+          "feedTitle": {
+            "type": "string"
+          },
+          "hasDate": {
+            "description": "HasDate is false when the feed gave no date; Published is then the\ntime the item was first seen.",
+            "type": "boolean"
+          },
+          "id": {
+            "description": "the feed's GUID",
+            "type": "string"
+          },
+          "image": {
+            "$ref": "#/components/schemas/Image"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "link": {
+            "type": "string"
+          },
+          "people": {
+            "items": {
+              "$ref": "#/components/schemas/Person"
+            },
+            "type": "array"
+          },
+          "published": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "summary": {
+            "description": "plain-text excerpt",
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "title",
+          "link",
+          "published",
+          "hasDate"
+        ],
+        "type": "object"
+      },
+      "Person": {
+        "description": "Person is someone shown in a photo (lna:model). See\ndocs/concepts/autouploader-model-tags.md for the feed contract.",
+        "properties": {
+          "autotag": {
+            "description": "agreed to be mentioned",
+            "type": "boolean"
+          },
+          "name": {
+            "type": "string"
+          },
+          "profiles": {
+            "items": {
+              "$ref": "#/components/schemas/Profile"
+            },
+            "type": "array"
+          },
+          "slug": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "slug",
+          "name",
+          "autotag"
+        ],
+        "type": "object"
+      },
+      "Profile": {
+        "description": "Profile is one profile of a Person; Platform is a lowercase key such as\n\"instagram\" or \"mastodon\".",
+        "properties": {
+          "platform": {
+            "type": "string"
+          },
+          "url": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "platform",
+          "url"
+        ],
+        "type": "object"
+      }
+    }
+  },
+  "info": {
+    "description": "Source lists the items of one feed.\n\nGenerated by hpc gen from github.com/LNA-DEV/HomePageCompanion/capability/feed.Source. A service offering it answers these paths; requests from the core carry the Companion-Signature header (docs/services/protocol.md).",
+    "title": "feed.source/v1",
+    "version": "1"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/capabilities/feed.source/v1/getItem": {
+      "post": {
+        "operationId": "getItem",
+        "parameters": [
+          {
+            "description": "The provider's instance the call is for (\"main\").",
+            "in": "header",
+            "name": "Companion-Instance",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Item"
+                }
+              }
+            },
+            "description": "done"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/capabilities/feed.source/v1/listItems": {
+      "post": {
+        "operationId": "listItems",
+        "parameters": [
+          {
+            "description": "The provider's instance the call is for (\"main\").",
+            "in": "header",
+            "name": "Companion-Instance",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {},
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/Item"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "done"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    }
+  }
+}

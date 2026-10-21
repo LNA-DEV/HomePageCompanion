@@ -1,0 +1,24 @@
+{
+  "status": 200,
+  "header": {
+    "Content-Type": "application/json; charset=utf-8"
+  },
+  "json": [
+    {
+      "cover": {
+        "cap": "Marienplatz",
+        "src": "/api/trips/media/82c112ba48dc1e44cc1cf2eec6990dcd22c0e02d765b0478dcfea18d356ce53e.jpg"
+      },
+      "dateRange": "Jul 1–6, 2026",
+      "slug": "scandinavia",
+      "stats": {
+        "cities": 3,
+        "countries": 3,
+        "daysElapsed": 9,
+        "daysTotal": 9,
+        "distanceKm": 650
+      },
+      "title": "Scandinavia"
+    }
+  ]
+}

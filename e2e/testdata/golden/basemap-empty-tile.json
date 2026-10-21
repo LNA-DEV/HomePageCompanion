@@ -1,0 +1,6 @@
+{
+  "status": 204,
+  "header": {
+    "Cache-Control": "public, max-age=31536000, immutable"
+  }
+}

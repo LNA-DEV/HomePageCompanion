@@ -172,6 +172,8 @@ Rules:
 - `Companion-Instance: main` tells a service which of its instances is meant.
 - Third parties define their own capabilities in their own package as `x.<author>.<name>/v1`.
 
+As built (`cmd/hpc/gen*.go`, `companion/wire`): `hpc gen` reads the capability packages with `go/types` and writes `wire_gen.go` into each: a client (an implementation of the capability that posts to a provider), a server (answers the operations for an implementation) and a measuring wrapper, which the core puts around every connection for the calls, errors and latency per capability and instance in `/metrics`. Optional operations are interfaces named in `NewCapability(…, companion.Optional[social.Lister]())`; client and wrapper keep exactly the ones a provider offers visible to type assertions. A capability's sentinel errors travel as codes (`ErrRateLimited` as `rate_limited`) and come back as themselves. OpenAPI 3.1 goes to `docs/services/openapi/`, TypeScript types to `@companion/ui/capabilities/<package>`; a test fails when they are not up to date. `storage.*` stays Go only (`//hpc:local`). The protocol around them is `docs/services/protocol.md`.
+
 Starting set, derived from the code:
 
 | Capability | Operations | Provided by | Used by |
@@ -284,6 +286,8 @@ The admin shell provides the frame: login, navigation, dashboard grid, logs. Eve
 - **One SDK** (`@companion/ui`) hides the difference: `connect(this)` gives an authenticated `api`, `navigate` and the theme tokens, directly for modules and over the bridge for services.
 - The shell is embedded in the core binary as well. Its nginx container goes away: static files, the SPA fallback and the `/_app/` cache header move into the core, the `/api` proxy becomes unnecessary.
 
+As built (`core/serviceui.go`, `web/src/lib/components/ServiceFrame.svelte`, `web/src/sdk/index.ts`): the shell asks `POST /api/core/services/<id>/ui-token` for a token that lasts an hour and is valid for that service only, and loads its page from `/ui/s/<token>/index.html?page=…&element=…&path=…` (`?widget=…` for a dashboard card). Those responses carry `Content-Security-Policy: sandbox allow-scripts allow-forms`, so the page stays sandboxed even when opened outside the frame, where it would otherwise run with the companion's origin and the admin's session; `Referrer-Policy: no-referrer` keeps the token from leaking. Inside, `@companion/ui` notices it is in a frame and sends its calls to the shell, which makes them with the token (`Authorization: Bearer`; `?uiToken=` for an `<img>`): the token opens `/api/b/<service>/` and nothing else, and `core` refuses. The shell draws the page header and passes on navigation (links to shell pages included), notifications, the frame's height and the theme. A service in another language imports the same SDK as one file, `/ui/sdk/companion-ui.js`; a Go module run as a service gets an `index.html` from the SDK that places its custom element, so its UI works in both places. The UI tests run the `notes` service of the integration setup that way and check what the frame cannot reach.
+
 Today's pages move to their building blocks: Dashboard, Logs, Login → shell; Feeds → `rss`; Publications, Uploads, Connections, Interactions → the new `autoupload` pages (`autoposting-ui.md` §4); Microblog → `microblog`; Subscribers, Broadcast → `webpush`; Webmentions → `webmention`; Trips → `trips`; Basemap → `basemap`.
 
 ### 5.8 Trust and rights
@@ -303,9 +307,13 @@ Today's pages move to their building blocks: Dashboard, Logs, Login → shell; F
 
 Never possible: S3 credentials, Docker access, other services, other building blocks' secrets. Enforcement: each service sits in its own internal Docker network (`internal: true`) with only the companion attached; internet only through `HTTP_PROXY=http://companion:3128`; every call carries the service's own token and is checked against grants and connections; the core signs its requests to the service; containers run non-root with a read-only root file system, `cap_drop: [ALL]`, `no-new-privileges` and memory and PID limits. `hpc apply` shows the requested rights and applies them only after confirmation, also on every update that asks for more.
 
+As built (`cmd/hpc/apply.go`, `core/egress.go`): `hpc apply` reads `services:` of `companion.yaml`, pulls (`oci://`), clones and builds (`git+https://…@ref#subdir`) or builds (`path:`, relative to the compose file) every image, and reads its manifest by running it once without a network (`COMPANION_MANIFEST=print`). It shows what each service offers, asks for and gets, and asks before granting a right `companion.lock` has not confirmed yet (`--yes` for scripts). It writes `compose.generated.yml`: the companion extended from the operator's own compose file, every service in an `internal` network of its own where the companion is reachable as `companion`, non-root (`65532` when the image says root), read-only with `/tmp` in memory, `cap_drop: [ALL]`, `no-new-privileges`, memory, PID and CPU limits, its token directory read-only and its volume. Then `companion.lock` and `docker compose up -d --remove-orphans`; the companion picks up the new lock within a minute. The egress proxy knows a service by its address in its own network (or by `Proxy-Authorization` outside Docker), lets through the hosts of its grant (`host` for ports 80 and 443, `host:port`, `*.domain`), resolves once and dials the address it checked, and never reaches loopback, link-local (the cloud metadata service) or multicast addresses. The Compose tests (`e2e/compose_test.go`, the `services` job) check all of it from inside a probe container.
+
 **Admin login and gateway.** The admin key moves from `localStorage` (`web/src/lib/api.ts:9`) to a session cookie (`HttpOnly`, `SameSite=Strict`). Module UIs use it implicitly; service iframes never see it and get a short-lived token valid only for `/api/b/<service>/…`. The gateway sets `SetTrustedProxies` (§3.4).
 
 **Connecting accounts (OAuth).** The core runs the flow (redirect, callback at `/api/b/<id>/oauth/callback`, `state` and PKCE, code exchange); the module only names the authorisation URL and scopes, and registers an app first where the platform requires it (Mastodon, Pixelfed). Tokens go to the secret store (§5.10) and the module refreshes them itself. Instagram and Threads need a Meta app once (client ID and secret in `.env`). Where a platform has no OAuth, the token field in the settings form stays.
+
+As built (`companion/oauth.go`, `core/oauth.go`): an instance implements `companion.OAuthConnector`; the settings page asks `POST /api/b/<id>/oauth/start` for the authorisation URL. The session cookie is `SameSite=Strict`, so the platform's redirect back arrives without it: the callback is authenticated by the `state` alone, which only a logged-in operator can create, works once and lives 15 minutes. The callback answers a page of its own that moves on to the settings page, because a redirect would still count as cross-site and lose the cookie. The redirect URI is `core.publicUrl` + `/api/b/<id>/oauth/callback`; the settings page shows it for registering with Meta. A connected account takes the place of the configured token; disconnecting brings the configured one back. Mastodon and Pixelfed share `lib/fediauth`, Instagram and Threads hand the long-lived token to `lib/metatoken`, where a new token in `.env` still replaces the connection. Bluesky keeps its app password (§10.1).
 
 ### 5.9 Runtime
 
@@ -317,6 +325,8 @@ Never possible: S3 credentials, Docker access, other services, other building bl
 | Events | in-process bus with an outbox in the core's database: at least once, retried | `POST /events`, deduplicated by event ID |
 | Failures | `recover` and timeout around every job, handler and event; a memory leak still hits the whole process | a crash stays in the container; CPU and memory limits per service |
 | Logs | shared logger with `module=<id>` | stdout, read by the core through Docker |
+
+As built (`core/services.go`, package `service`): the core plans a service with the manifest `companion.lock` recorded, so a service that is down changes nothing but its own instances: they count as not running, calls to them fail as transient errors, and the core configures the service again as soon as it answers, also after a restart it notices through the configuration version `/health` reports. Instance jobs come from the manifest or from the answer to the configuration, because a module's schedule often is one of its config fields. Services reach the core on a listener of their own (`core.servicesListen`, `:3128`, never published), which the egress proxy shares. Logs: the SDKs send their lines to `/core/v1/logs` besides stdout, instead of the core reading them through Docker, which would need the Docker socket in the companion. `service.Serve(info)` runs any module as a service: its database is a SQLite file in the volume, its slots, secrets and events go through the core; the integration tests run the `mastodon` module that way, connected to `autoupload`.
 
 Today's public URLs stay as aliases: `/api/tiles/basemap/*` → `basemap`, `/api/tiles/gbif/*` → `gbif`, `/api/interactions/*` → `interactions`, `/api/webmention` → `webmention`, `/api/webpush/*` → `webpush`, `/api/microblog/*` → `microblog`, `/api/trips/*` → `trips`. The core refuses to start if two aliases collide.
 
@@ -336,6 +346,8 @@ Today's public URLs stay as aliases: `/api/tiles/basemap/*` → `basemap`, `/api
 - Services get no keys; from Stage 3 the core streams `/core/v1/blobs/<key>` or hands out signed URLs for large files, own area only.
 
 **Secret store.** The core stores secrets created at runtime, encrypted and separated per module, with one key `COMPANION_SECRET_KEY` from `.env`, through the DB module: refreshed tokens (today `metatoken` with `TOKEN_ENCRYPTION_KEY`), OAuth tokens, the VAPID private key. SDK: `ctx.Secrets().Get/Put/Delete`; services from Stage 3 through `/core/v1/secrets/<name>`. What the operator types in, a token via `${VAR}`, stays in `.env`. `hpc secrets rotate` re-encrypts everything.
+
+As built (`core/servicedata.go`, `service/storage.go`): services store through `/core/v1/data/<collection>/<id>` (JSON documents in the core's own area, table `core_service_documents`) and `/core/v1/blobs/<key>` (the blob store under `services/<id>/`, ranges and multipart uploads included), both in every backup. `/core/v1/blob-urls` signs a public URL of a file for a platform that fetches it itself; `/core/v1/fetch` hands a service the file behind one of the core's own URLs, the temp URLs of images to post among them, since a service cannot reach the companion's public address. `/core/v1/secrets/<name>` is the secret store, apart from every module's. The Go SDK's `Blobs()`, `Temp()` and `Secrets()` use these, so a module behaves the same as a service; `media.image/v1` reaches a service through its slot with the image as the raw body.
 
 **Backup and restore.** `hpc backup` writes the whole state to one file, `hpc restore` brings it back; no module has to do anything for it.
 
@@ -396,6 +408,8 @@ The same module ships as a service without changes: `func main() { service.Serve
 | `hpc test` | the tests of §6 for one building block, including the conformance suite of its capabilities |
 | `companiontest` | Go package with a test core: fakes in slots, events injected, jobs triggered |
 
+As built (`cmd/hpc/dev.go`, `cmd/hpc/test.go`, `sdk/python`): `hpc dev` builds the companion of `build.yaml` into `.hpc/dev`, runs it and rebuilds and restarts it when the local core or a local module changes; it rebuilds the module UIs only when a file under a `ui/` directory changed, and a failed build keeps the running companion. The shell runs in Vite's dev server in front of it (port 5173), with hot reload; the companion embeds only the UI SDK. A service in development runs from its source instead of a container: `--service lemmy="python3 services/lemmy/lemmy.py"` starts it at the `url:` of its block, restarts it when its source changes and writes its manifest into `companion.lock` when it changes, which a source mounted into a container could not do for every language. `hpc test <module dir>` runs `go vet` and `go test -race` there; `hpc test --run "<command>"` tests a service in any language: it starts the service next to a test core, configures its instances and runs the conformance suites of what its manifest offers through the wire protocol (`companiontest.PublisherConformance` for `social.publisher/v1`). The Python SDK uses only the standard library; the Lemmy service is built on it.
+
 ## 6. Tests
 
 Every stage is built with tests, and the CI only lets through what passed them. Today the CI builds and pushes images without running a single test, and two of the three critical findings of §3 sit in packages without any (`inventory`, `database`). The existing tests are green.
@@ -423,6 +437,8 @@ CI gates:
 2. Every pull request in addition: integration and UI tests, screenshots as artefacts.
 3. Images are built and pushed only from `main` and only after green tests.
 4. Instead of a coverage percentage: every package with logic has tests. A package without a test file passes only if it is on a short exception list, e.g. `models`.
+
+As built: the integration setup is `e2e/world`, every standard module as one program, a generated test feed (60 photos with real JPEGs, 8 blog posts) and fake Mastodon, Pixelfed, Bluesky, Instagram, Threads and push servers that fail on request (status, expired token, a call that hangs). Its seed uses real runs: posts on every network, one open problem per cause, likes, microblog posts, webmentions, subscribers. `go test -tags integration ./...` in `e2e/` runs the scenarios, among them a restart and a `kill -9` in the middle of a post, against a separately built companion (`e2e/cmd/companion`). `e2e/cmd/uiserver -world` serves the same setup to Playwright (`web/tests/ui`, `npm run test:ui`). Both run on every push and pull request; the image waits for them.
 
 ## 7. Build order
 
@@ -457,6 +473,8 @@ Gate: the shell contains no feature page.
 4. A first service as proof, e.g. `lemmy` in Python.
 
 Gate: a service in another language offers `social.publisher/v1` and can be connected to `autoupload`.
+
+As built: `services/lemmy`, in Python, offers `social.publisher/v1` and `social.interactions/v1` for a Lemmy account; `autoupload` posts photos of the feed to a community through it, with the image fetched through the core and uploaded to pict-rs. It passes the publisher's conformance suite with `hpc test`, and the Compose tests build it with `hpc apply` from this repository and post through it inside Docker, with only the granted hosts in reach (`e2e/lemmy_test.go`, `e2e/compose_test.go`).
 
 **No commit, no deploy** unless asked.
 
@@ -495,6 +513,20 @@ A registry with a "discover" page; templates `hpc new module` and `hpc new servi
 |---|---|---|
 | Whether `go get` can resolve the core as it is laid out | `src/go.mod` declares the repository root as module path, without a `go.mod` there; not tried | `go get github.com/LNA-DEV/HomePageCompanion@8c01664` from an empty module; fix the module path or the layout in Stage 0 |
 | Memory per service container (10–30 MB assumed) and build time of `hpc build` | estimates, nothing built yet | measure the first service and the first `hpc build` in Stage 1 and 3 |
-| Threads text posts and link previews, Bluesky link cards, OAuth for Bluesky and Meta | API behaviour from memory, not checked against the docs | read the current platform docs before Stage 2; record the results here like `model-tagging.md` §4 |
+| ~~Threads text posts and link previews, Bluesky link cards, OAuth for Bluesky and Meta~~ | checked 2026-10-21, §10.1 | |
 | Real data: the live gallery feed and a production `companion.db` | `lna-dev.net` is not reachable from the sandbox; production needs the admin key | run `hpc migrate --check` against a copy of the production `data/` before Stage 1 |
 | Whether openresty sets or appends `X-Forwarded-For` | host config, outside this repository | as in `webmention.md` §14; decides the `SetTrustedProxies` value |
+
+### 10.1 Platform behaviour, checked 2026-10-21
+
+Read from the official documentation sources: Mastodon's and atproto's documentation repositories, Pixelfed's and Laravel Passport's source, Meta's developer pages and its `fbsamples/threads_api`. The documentation sites themselves did not resolve from the sandbox.
+
+| Platform | Account connection | Tokens | Notes |
+|---|---|---|---|
+| Mastodon | `POST /api/v1/apps` (`client_name`, `redirect_uris`, `scopes`), then `/oauth/authorize` and `/oauth/token`; PKCE `S256` and `/.well-known/oauth-authorization-server` from 4.3 | do not expire, no refresh token; `/oauth/revoke` | the app is registered with every scope it later asks for: `read:accounts read:statuses write:media write:statuses` (`profile` would do for the account, but only from 4.3) |
+| Pixelfed | `POST /api/v1/apps` too; `redirect_uris` is a newline-separated string, `scopes` is ignored; Laravel Passport behind `/oauth/authorize` and `/oauth/token` | expire after 365 days (`OAUTH_TOKEN_DAYS`), with a refresh token (400 days); no revoke endpoint | only `read` and `write`, no granular scopes; PKCE optional |
+| Bluesky | atproto OAuth: `client_id` is the URL of a client metadata document, PAR, DPoP with server nonces on the token endpoint and on every PDS request, PKCE `S256`; a confidential client authenticates with `private_key_jwt` against a published JWKS | access tokens under 30 minutes, single-use refresh tokens; public clients limited to two weeks | app passwords are still supported. Link cards: the client fetches the page and uploads the thumbnail itself (`app.bsky.embed.external`, thumb up to 1 MB); posts 300 graphemes |
+| Instagram | Instagram API with Instagram Login: `https://www.instagram.com/oauth/authorize`, scopes comma-separated (`instagram_business_basic`, `instagram_business_content_publish`, …), code at `https://api.instagram.com/oauth/access_token`; the Instagram app's ID and secret, not the Meta app's | the code gives a 1-hour token, `ig_exchange_token` a 60-day one, `ig_refresh_token` renews it after 24 hours | the redirect URI must be registered exactly in the dashboard; PKCE not documented; the documented answer wraps the token in `data: [...]` |
+| Threads | `https://www.threads.com/oauth/authorize`, code at `https://graph.threads.net/oauth/access_token`; the Threads app's ID and secret | `th_exchange_token` gives 60 days, `th_refresh_token` renews it | https redirects only, never localhost; deleting needs `threads_delete`. Text posts: `media_type=TEXT`, 500 characters (emoji counted by UTF-8 bytes); without `link_attachment` the first URL becomes the preview; at most 5 links per post |
+
+**Bluesky stays on app passwords for now.** Its OAuth does not fit the model above, where a module names URLs and scopes: it needs PAR, DPoP proofs (with nonce retries) on every request of the Bluesky client, a client metadata document and a JWKS served from `core.publicUrl`, and `private_key_jwt` instead of a client secret. That is a client of its own, not a few hooks; it waits for a decision.

@@ -1,7 +1,14 @@
 <script lang="ts">
 	import { onMount, onDestroy } from 'svelte';
-	import { api, type LogsResponse } from '$lib/api';
 	import { PageHeader, Loading, SearchInput } from '$lib/components';
+	import { core } from '$lib/shell/core';
+	import { manifest } from '$lib/shell/session';
+
+	interface LogsResponse {
+		files: string[];
+		file: string;
+		lines: string[];
+	}
 	import { RefreshCw } from 'lucide-svelte';
 
 	let data = $state<LogsResponse | null>(null);
@@ -10,6 +17,7 @@
 	let file = $state('');
 	let tail = $state(200);
 	let search = $state('');
+	let module = $state('');
 	let autoRefresh = $state(false);
 	let refreshing = $state(false);
 	let timer: ReturnType<typeof setInterval> | null = null;
@@ -17,7 +25,7 @@
 	async function load() {
 		refreshing = true;
 		try {
-			const resp = await api.getLogs({ file: file || undefined, tail, search: search || undefined });
+			const resp = await core.get<LogsResponse>('logs', { file, tail, search, module: file.startsWith('app-') ? module : '' });
 			data = resp;
 			if (!file && resp.file) file = resp.file;
 			error = '';
@@ -83,7 +91,7 @@
 	});
 </script>
 
-<PageHeader title="Logs" description="Tail of the backend server log file">
+<PageHeader title="Logs" description="The companion's log files; the app log by building block">
 	{#snippet actions()}
 		<button onclick={load} class="btn-secondary btn-sm" disabled={refreshing}>
 			<span class="inline-flex items-center gap-1.5">
@@ -117,7 +125,7 @@
 				bind:value={file}
 				onchange={load}
 				class="input w-full sm:w-64"
-				disabled={!data || data.files.length === 0}
+				disabled={!data || (data.files ?? []).length === 0}
 			>
 				{#if grouped.app.length > 0}
 					<optgroup label="App">
@@ -150,6 +158,16 @@
 			</select>
 		</div>
 		<div class="flex items-center gap-2">
+			<label for="logModule" class="text-sm font-medium text-gray-700 dark:text-gray-300">Block:</label>
+			<select id="logModule" bind:value={module} onchange={load} class="input w-full sm:w-44" disabled={!file.startsWith('app-')}>
+				<option value="">all</option>
+				<option value="core">core</option>
+				{#each $manifest?.modules ?? [] as m}
+					<option value={m.id}>{m.name}</option>
+				{/each}
+			</select>
+		</div>
+		<div class="flex items-center gap-2">
 			<label for="logTail" class="text-sm font-medium text-gray-700 dark:text-gray-300">Tail:</label>
 			<select
 				id="logTail"
@@ -172,10 +190,10 @@
 
 {#if loading}
 	<Loading message="Loading logs..." />
-{:else if !data || data.lines.length === 0}
+{:else if !data || (data.lines ?? []).length === 0}
 	<div class="card text-center py-12">
 		<p class="text-gray-500 dark:text-gray-400">
-			{data && data.files.length === 0 ? 'No log files yet — they appear after the server writes its first log line.' : 'No lines match your filter.'}
+			{data && (data.files ?? []).length === 0 ? 'No log files yet — they appear after the server writes its first log line.' : 'No lines match your filter.'}
 		</p>
 	</div>
 {:else}

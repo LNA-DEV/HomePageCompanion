@@ -4,12 +4,15 @@
 	"private": true,
 	"scripts": {
 		"dev": "vite dev",
-		"build": "vite build",
+		"build": "vite build && vite build -c vite.sdk.config.ts",
 		"preview": "vite preview",
-		"check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
-		"check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch"
+		"check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json && node scripts/build-modules.mjs --stage-only && svelte-check --workspace .modules --config ./svelte.config.js --tsconfig ../tsconfig.modules.json",
+		"check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
+		"build:modules": "node scripts/build-modules.mjs --out build-modules",
+		"test:ui": "playwright test"
 	},
 	"devDependencies": {
+		"@playwright/test": "1.56.1",
 		"@sveltejs/adapter-static": "^3.0.8",
 		"@sveltejs/kit": "^2.15.1",
 		"@sveltejs/vite-plugin-svelte": "^5.0.3",

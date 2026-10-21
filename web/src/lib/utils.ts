@@ -29,3 +29,15 @@ export function platformColor(platform: string | null | undefined): string {
 		'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-200'
 	);
 }
+
+// safeHref returns the URL for an href only when it is http or https, so a
+// stored javascript: or data: URL never becomes a clickable link.
+export function safeHref(url: string | null | undefined): string | undefined {
+	if (!url) return undefined;
+	try {
+		const u = new URL(url);
+		return u.protocol === 'http:' || u.protocol === 'https:' ? u.href : undefined;
+	} catch {
+		return undefined;
+	}
+}

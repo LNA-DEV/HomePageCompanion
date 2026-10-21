@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Notes</title>
+<style>
+	body { margin: 0; font: 14px/1.5 system-ui, sans-serif; color: #1f2937; background: transparent; }
+	.dark body { color: #e5e7eb; }
+	ul { padding-left: 1.2rem; }
+	input { padding: .35rem .5rem; border: 1px solid #d1d5db; border-radius: .375rem; }
+	button { padding: .35rem .75rem; border: 0; border-radius: .375rem; background: #4f46e5; color: white; cursor: pointer; }
+	dl { display: grid; grid-template-columns: 10rem 1fr; gap: .25rem 1rem; }
+	dt { color: #6b7280; }
+</style>
+</head>
+<body>
+<main id="page" hidden>
+	<p>A service's page, in the shell's sandboxed frame.</p>
+	<form id="add"><input id="text" aria-label="Note" placeholder="A note"> <button>Add note</button></form>
+	<ul id="list" data-testid="notes"></ul>
+	<p><a href="/settings" id="settings">Settings</a> · <button type="button" id="open">Open note 1</button></p>
+	<p id="detail" data-testid="note-detail" hidden></p>
+	<h2>What this frame can reach</h2>
+	<dl data-testid="isolation">
+		<dt>the shell's page</dt><dd id="parent"></dd>
+		<dt>cookies</dt><dd id="cookies"></dd>
+		<dt>storage</dt><dd id="storage"></dd>
+		<dt>the core's API</dt><dd id="core"></dd>
+		<dt>dark mode</dt><dd id="dark"></dd>
+	</dl>
+</main>
+<div id="widget" hidden><strong id="count" data-testid="notes-count">…</strong> notes</div>
+<script type="module">
+import { connect } from '/ui/sdk/companion-ui.js';
+
+const c = connect('notes');
+const q = new URLSearchParams(location.search);
+const $ = (id) => document.getElementById(id);
+const attempt = (f) => { try { return f(); } catch (e) { return 'blocked (' + e.name + ')'; } };
+
+async function load() {
+	const notes = await c.api.get('notes');
+	if (q.get('widget')) { $('count').textContent = String(notes.length); return; }
+	$('list').replaceChildren(...notes.map((n) => Object.assign(document.createElement('li'), { textContent: n.text })));
+}
+
+if (q.get('widget')) {
+	$('widget').hidden = false;
+} else {
+	$('page').hidden = false;
+	if (q.get('path')) {
+		$('detail').hidden = false;
+		$('detail').textContent = 'Note ' + q.get('path');
+	}
+	$('add').addEventListener('submit', async (e) => {
+		e.preventDefault();
+		try {
+			await c.api.post('notes', { text: $('text').value });
+			$('text').value = '';
+			c.toast('Note saved', 'success');
+			await load();
+		} catch (err) {
+			c.toast(err.message, 'error');
+		}
+	});
+	$('open').addEventListener('click', () => c.navigate('note/1'));
+	$('parent').textContent = attempt(() => (window.parent.document.title, 'reachable'));
+	$('cookies').textContent = attempt(() => (document.cookie, 'readable'));
+	$('storage').textContent = attempt(() => (localStorage.length, 'usable'));
+	c.core.get('instances').then(() => ($('core').textContent = 'reachable'), (e) => ($('core').textContent = 'blocked (' + e.status + ')'));
+	const dark = () => ($('dark').textContent = document.documentElement.classList.contains('dark') ? 'on' : 'off');
+	new MutationObserver(dark).observe(document.documentElement, { attributes: true });
+	dark();
+}
+load().catch((e) => c.toast(e.message, 'error'));
+</script>
+</body>
+</html>

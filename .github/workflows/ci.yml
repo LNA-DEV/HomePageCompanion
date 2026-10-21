@@ -1,0 +1,201 @@
+name: CI
+
+# Every push and pull request runs the tests: unit, contract, module and
+# migration tests, the integration tests and the UI tests; red blocks the
+# merge. Images are built and pushed only from main (and version tags), and
+# only after the tests passed (docs/concepts/modular-architecture.md §6).
+on:
+  push:
+    branches: ['**']
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  go:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: '**/go.sum'
+      - name: go vet
+        run: scripts/go-each.sh vet ./...
+      - name: go test
+        run: scripts/go-each.sh test -race ./...
+      - name: every package has tests
+        run: scripts/check-tests-each.sh
+      - name: every module builds on its own
+        run: GOWORK=off scripts/go-each.sh build ./...
+
+  web:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm ci
+      - name: svelte-check (shell and module UIs)
+        run: npm run check
+      - name: build the shell
+        run: npm run build
+      - name: build the module UIs
+        run: npm run build:modules
+
+  # Every standard module as one program, against a local test feed and fake
+  # platforms that fail on purpose: feed gone, 429, 503, expired token, a
+  # restart and a kill in the middle of a job (e2e/world).
+  integration:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: e2e
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: '**/go.sum'
+      - name: go vet
+        run: go vet -tags integration ./...
+      - name: go test
+        run: go test -race -tags integration -count=1 ./...
+
+  # The shell and the module UIs in Chromium against the same setup
+  # (cmd/uiserver -world): login, posts with filters, search and paging, the
+  # detail panel, "run now", problems, a phone. The screenshots are kept.
+  ui:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: '**/go.sum'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm ci
+      - name: build the shell and the module UIs
+        run: npm run build && npm run build:modules
+      - name: install Chromium
+        run: npx playwright install --with-deps chromium
+      - name: Playwright
+        run: npm run test:ui
+      - name: keep the screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ui-screenshots
+          path: |
+            web/ui-screenshots/
+            web/playwright-report/
+            web/test-results/
+          retention-days: 14
+          if-no-files-found: ignore
+
+  # A service in its own container next to the companion, started by
+  # hpc apply: its slot works, an unconnected one does not, only the granted
+  # host is reachable and its container is locked down; the Lemmy service,
+  # in Python, built from this repository, posts for autoupload
+  # (e2e/compose_test.go).
+  services:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: e2e
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: '**/go.sum'
+      - name: the Python SDK
+        working-directory: .
+        run: python3 -m unittest discover -s sdk/python/tests -v
+      - name: build the companion image
+        working-directory: .
+        run: docker build -t companion:test .
+      - name: Docker Compose tests
+        run: go test -tags compose -count=1 -v -run Compose ./...
+        env:
+          COMPANION_IMAGE: companion:test
+
+  # One image: the shell, the core and every module of build.yaml. Built on
+  # every push so a broken image is red too; pushed to GHCR from main and
+  # version tags only.
+  image:
+    needs: [go, web, integration, ui, services]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    env:
+      PUSH: ${{ github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')) }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: docker/setup-buildx-action@v3
+      - name: Log in to GHCR
+        if: env.PUSH == 'true'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Compute image metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository_owner }}/homepagecompanion
+          tags: |
+            type=ref,event=branch
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{major}}
+            type=raw,value=latest,enable=${{ github.ref == format('refs/heads/{0}', github.event.repository.default_branch) }}
+            type=sha,prefix=sha-,format=short
+      - name: Build (and push)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          push: ${{ env.PUSH == 'true' }}
+          build-args: VERSION=${{ steps.meta.outputs.version }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Compute the Lemmy service's image metadata
+        id: lemmy
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository_owner }}/companion-lemmy
+          tags: |
+            type=ref,event=branch
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}
+            type=raw,value=latest,enable=${{ github.ref == format('refs/heads/{0}', github.event.repository.default_branch) }}
+            type=sha,prefix=sha-,format=short
+      - name: Build (and push) the Lemmy service
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./services/lemmy/Dockerfile
+          push: ${{ env.PUSH == 'true' }}
+          tags: ${{ steps.lemmy.outputs.tags }}
+          labels: ${{ steps.lemmy.outputs.labels }}

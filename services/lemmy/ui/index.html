@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lemmy</title>
+<style>
+	body { margin: 0; font: 14px/1.5 system-ui, sans-serif; color: #1f2937; background: transparent; }
+	.dark body { color: #e5e7eb; }
+	section { background: #fff; border-radius: .75rem; padding: 1rem 1.25rem; margin-bottom: 1rem; box-shadow: 0 1px 2px rgb(0 0 0 / .06); }
+	.dark section { background: #1f2937; }
+	h2 { font-size: 1rem; margin: 0 0 .25rem; }
+	.muted { color: #6b7280; }
+	ul { padding-left: 1.2rem; margin: .5rem 0 0; }
+	.error { color: #b91c1c; }
+	a { color: #4f46e5; }
+</style>
+</head>
+<body>
+<div id="root"><p class="muted">Loading…</p></div>
+<script type="module">
+import { connect, formatDate } from '/ui/sdk/companion-ui.js';
+
+const c = connect('lemmy');
+const root = document.getElementById('root');
+const el = (tag, props = {}, ...kids) => {
+	const e = Object.assign(document.createElement(tag), props);
+	e.append(...kids);
+	return e;
+};
+
+try {
+	const accounts = await c.api.get('status');
+	root.replaceChildren(...(accounts.length ? accounts : [null]).map((a) => {
+		if (!a) return el('p', { className: 'muted', textContent: 'No instance configured: add one under services.lemmy in companion.yaml.' });
+		const s = el('section', {},
+			el('h2', { textContent: `${a.account} → ${a.community}` }),
+			el('div', { className: 'muted', textContent: `instance ${a.instance} on ${a.server}` }));
+		if (a.error) s.append(el('p', { className: 'error', textContent: a.error }));
+		else if (!a.posts.length) s.append(el('p', { className: 'muted', textContent: 'No posts yet.' }));
+		else s.append(el('ul', {}, ...a.posts.map((p) => el('li', {},
+			el('a', { href: p.ref.url, target: '_blank', rel: 'noopener', textContent: p.text.split('\n')[0] || p.ref.id }),
+			el('span', { className: 'muted', textContent: ' · ' + formatDate(p.createdAt) })))));
+		return s;
+	}));
+} catch (e) {
+	root.replaceChildren(el('p', { className: 'error', textContent: e.message }));
+}
+</script>
+</body>
+</html>

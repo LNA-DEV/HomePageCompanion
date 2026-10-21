@@ -1,0 +1,7 @@
+# Packages allowed without a test file (modular-architecture.md §6, gate 4).
+# Capabilities that only declare interfaces and types:
+capability/feed
+capability/geo
+capability/media
+capability/notify
+capability/storage
