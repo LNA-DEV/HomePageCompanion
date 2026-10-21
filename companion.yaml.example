@@ -38,15 +38,15 @@ modules:
       photos:
         url: https://example.com/gallery/index.xml
 
-  # Networks: social.publisher/v1 and social.interactions/v1. An account
-  # is connected on its settings page ("Connect account", OAuth; needs
-  # core.publicUrl), or gets its token here. A connected account takes the
-  # place of the token while it is connected.
+  # Networks: social.publisher/v1 and social.interactions/v1. Each account
+  # gets its token here, as before, or is connected on its settings page
+  # ("Connect account", OAuth; needs core.publicUrl). A connected account
+  # takes the place of the token while it is connected.
   mastodon:
     instances:
       main:
         instance: ${MASTODON_INSTANCE}
-        token: ${MASTODON_PAT:-}   # not needed once the account is connected
+        token: ${MASTODON_PAT:-}   # or connect the account instead
         # maxLength: 500   # the instance's limit (/api/v2/instance, max_characters)
   pixelfed:
     instances:
@@ -58,25 +58,26 @@ modules:
       main:
         username: ${BLUESKY_USERNAME}
         password: ${BLUESKY_PAT}   # an app password (Bluesky has no account connection here yet)
-  # Instagram and Threads: to connect the account, create the app once in
-  # Meta's dashboard and register the callback URL the settings page shows
-  # (https://<publicUrl>/api/b/instagram/oauth/callback). The IDs and
-  # secrets are the Instagram app's (API setup with Instagram login) and the
-  # Threads app's, not the Meta app's. Without them, the token goes here.
+  # Instagram and Threads: the token here, as before (refreshed every week;
+  # a new one here replaces the stored one), or the account connected on
+  # its settings page. Connecting needs the app once: its ID and secret
+  # (the Instagram app's under API setup with Instagram login, and the
+  # Threads app's; not the Meta app's), and the callback URL the settings
+  # page shows registered in Meta's dashboard.
   instagram:
     instances:
       main:
-        appId: ${INSTAGRAM_APP_ID:-}
+        accountId: ${INSTAGRAM_ACCOUNT_ID:-}
+        accessToken: ${INSTAGRAM_ACCESS_TOKEN:-}
+        appId: ${INSTAGRAM_APP_ID:-}          # only to connect the account
         appSecret: ${INSTAGRAM_APP_SECRET:-}
-        # accountId: ${INSTAGRAM_ACCOUNT_ID}
-        # accessToken: ${INSTAGRAM_ACCESS_TOKEN}  # refreshed every week; a new one here replaces it
   threads:
     instances:
       main:
-        appId: ${THREADS_APP_ID:-}
+        userId: ${THREADS_USER_ID:-}
+        accessToken: ${THREADS_ACCESS_TOKEN:-}
+        appId: ${THREADS_APP_ID:-}            # only to connect the account
         appSecret: ${THREADS_APP_SECRET:-}
-        # userId: ${THREADS_USER_ID}
-        # accessToken: ${THREADS_ACCESS_TOKEN}
 
   # Autoposting: one instance per connection, feed → network.
   autoupload:

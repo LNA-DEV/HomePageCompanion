@@ -51,10 +51,11 @@ func (c *Core) ingestClientLogs(g *gin.Context) {
 		payload.Entries = payload.Entries[:maxClientLogEntries]
 	}
 
+	// Without the file logs of "companion serve" (tests, the UI server)
+	// the lines go to the core's log.
 	writer, err := logger.ClientWriter(payload.ClientID)
 	if err != nil {
-		g.JSON(http.StatusInternalServerError, gin.H{"error": "log writer unavailable"})
-		return
+		writer = c.log.Writer()
 	}
 
 	var buf strings.Builder

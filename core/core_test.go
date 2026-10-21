@@ -205,6 +205,54 @@ func TestAuth(t *testing.T) {
 	}
 }
 
+// The ways in of the pre-module companion keep working: the
+// "Authorization: ApiKey <key>" header on every admin route, and ?token=<key>
+// on the client log ingest only, under its old path.
+func TestOldAuthWays(t *testing.T) {
+	h := companiontest.New(t, baseConfig)
+	key := "ApiKey " + companiontest.AdminKey
+	call := func(method, path, auth string, body []byte) int {
+		req := httptest.NewRequest(method, path, bytes.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		if auth != "" {
+			req.Header.Set("Authorization", auth)
+		}
+		rec := httptest.NewRecorder()
+		h.Core.ServeHTTP(rec, req)
+		return rec.Code
+	}
+	for _, path := range []string{"/api/core/overview", "/api/b/t.consumer/hello"} {
+		if got := call("GET", path, key, nil); got != 200 {
+			t.Errorf("%s with the key header: %d", path, got)
+		}
+		if got := call("GET", path, "ApiKey wrong", nil); got != http.StatusUnauthorized {
+			t.Errorf("%s with a wrong key: %d", path, got)
+		}
+	}
+	if got := call("POST", "/api/legacy/admin-thing", key, nil); got != 200 {
+		t.Errorf("legacy admin alias with the key: %d", got)
+	}
+	logs := []byte(`{"clientId":"old-ui","entries":[{"level":"error","source":"console","message":"boom"}]}`)
+	for _, c := range []struct {
+		path, auth string
+		want       int
+	}{
+		{"/api/admin/client-logs", key, http.StatusNoContent},
+		{"/api/admin/client-logs?token=" + companiontest.AdminKey, "", http.StatusNoContent},
+		{"/api/admin/client-logs?token=wrong", "", http.StatusUnauthorized},
+		{"/api/admin/client-logs", "", http.StatusUnauthorized},
+		{"/api/core/client-logs", key, http.StatusNoContent},
+	} {
+		if got := call("POST", c.path, c.auth, logs); got != c.want {
+			t.Errorf("POST %s (auth %q): %d, want %d", c.path, c.auth, got, c.want)
+		}
+	}
+	// As before, the token in the URL is for the log ingest only.
+	if got := call("GET", "/api/core/overview?token="+companiontest.AdminKey, "", nil); got != http.StatusUnauthorized {
+		t.Errorf("?token= on another route: %d", got)
+	}
+}
+
 func TestAliases(t *testing.T) {
 	h := companiontest.New(t, baseConfig)
 	if w := h.Public("GET", "/api/legacy/thing", nil); w.Code != 200 || w.Body.String() != "legacy" {

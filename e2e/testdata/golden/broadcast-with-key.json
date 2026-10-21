@@ -1,0 +1,9 @@
+{
+  "status": 200,
+  "header": {
+    "Content-Type": "application/json; charset=utf-8"
+  },
+  "json": {
+    "status": "Broadcast sent"
+  }
+}

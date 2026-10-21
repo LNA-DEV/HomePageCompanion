@@ -35,9 +35,15 @@ type request struct {
 	path   string
 	header map[string]string
 	form   url.Values
+	json   string
 }
 
 const photo = "watzmann"
+
+// adminKey is how scripts (bruno/) authenticate.
+var adminKey = map[string]string{"Authorization": "ApiKey fixture-admin-key"}
+
+const clientLog = `{"clientId":"old-ui","entries":[{"level":"error","source":"console","message":"boom"}]}`
 
 var requests = []request{
 	{name: "health", path: "/health"},
@@ -74,6 +80,19 @@ var requests = []request{
 		form: url.Values{"source": {"https://another.example/note"}, "target": {"https://example.com/posts/x/"}}},
 	{name: "webmention-invalid", method: "POST", path: "/api/webmention",
 		form: url.Values{"source": {"javascript:alert(1)"}, "target": {"https://example.com/"}}},
+	// The ways in for scripts: the key in the header, a wrong one, none,
+	// and ?token= on the client log ingest of the old admin UI.
+	{name: "admin-wrong-key", method: "POST", path: "/api/webpush/broadcast", header: map[string]string{"Authorization": "ApiKey wrong"}, json: `{"title":"Hi","body":"there"}`},
+	{name: "broadcast-with-key", method: "POST", path: "/api/webpush/broadcast", header: adminKey, json: `{"title":"Hi","body":"there"}`},
+	{name: "interactions-fetch-with-key", method: "POST", path: "/api/interactions/fetch", header: adminKey},
+	{name: "interactions-fetch-without-key", method: "POST", path: "/api/interactions/fetch"},
+	{name: "backfill-with-key", method: "POST", path: "/api/backfill", header: adminKey},
+	{name: "backfill-without-key", method: "POST", path: "/api/backfill"},
+	{name: "upload-with-key", method: "POST", path: "/api/upload/mastodon", header: adminKey},
+	{name: "upload-without-key", method: "POST", path: "/api/upload/mastodon"},
+	{name: "client-logs-token", method: "POST", path: "/api/admin/client-logs?token=fixture-admin-key", json: clientLog},
+	{name: "client-logs-header", method: "POST", path: "/api/admin/client-logs", header: adminKey, json: clientLog},
+	{name: "client-logs-wrong-token", method: "POST", path: "/api/admin/client-logs?token=wrong", json: clientLog},
 }
 
 // accepted are the differences made on purpose, with the reason.
@@ -162,12 +181,18 @@ func do(t *testing.T, client *http.Client, base string, rq request) golden {
 	if rq.form != nil {
 		body = strings.NewReader(rq.form.Encode())
 	}
+	if rq.json != "" {
+		body = strings.NewReader(rq.json)
+	}
 	req, err := http.NewRequest(method(rq), base+rq.path, body)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if rq.form != nil {
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	}
+	if rq.json != "" {
+		req.Header.Set("Content-Type", "application/json")
 	}
 	for k, v := range rq.header {
 		req.Header.Set(k, v)
