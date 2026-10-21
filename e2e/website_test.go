@@ -43,7 +43,6 @@ const photo = "watzmann"
 // adminKey is how scripts (bruno/) authenticate.
 var adminKey = map[string]string{"Authorization": "ApiKey fixture-admin-key"}
 
-const clientLog = `{"clientId":"old-ui","entries":[{"level":"error","source":"console","message":"boom"}]}`
 
 var requests = []request{
 	{name: "health", path: "/health"},
@@ -90,9 +89,6 @@ var requests = []request{
 	{name: "backfill-without-key", method: "POST", path: "/api/backfill"},
 	{name: "upload-with-key", method: "POST", path: "/api/upload/mastodon", header: adminKey},
 	{name: "upload-without-key", method: "POST", path: "/api/upload/mastodon"},
-	{name: "client-logs-token", method: "POST", path: "/api/admin/client-logs?token=fixture-admin-key", json: clientLog},
-	{name: "client-logs-header", method: "POST", path: "/api/admin/client-logs", header: adminKey, json: clientLog},
-	{name: "client-logs-wrong-token", method: "POST", path: "/api/admin/client-logs?token=wrong", json: clientLog},
 }
 
 // accepted are the differences made on purpose, with the reason.

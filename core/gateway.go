@@ -67,11 +67,7 @@ func domainRegex(domain string) *regexp.Regexp {
 }
 
 // coreRoutes are the gateway's own prefixes; an alias may not shadow them.
-var coreRoutes = []string{"/api/core", "/api/b", "/health", "/metrics", "/ui", legacyClientLogs}
-
-// legacyClientLogs is the pre-module companion's client log ingest, still
-// answered for an old admin UI that may live on in a browser cache.
-const legacyClientLogs = "/api/admin/client-logs"
+var coreRoutes = []string{"/api/core", "/api/b", "/health", "/metrics", "/ui"}
 
 // rebuildGateway builds the HTTP routes for the current building blocks and
 // swaps them in.
@@ -111,7 +107,6 @@ func (c *Core) rebuildGateway() error {
 	})
 	r.GET(tempPath+":name", c.temp.serve)
 	c.coreAPI(r.Group("/api/core"))
-	r.POST(legacyClientLogs, c.requireAdminOrToken(), c.ingestClientLogs)
 
 	c.mu.RLock()
 	var blocks []*block

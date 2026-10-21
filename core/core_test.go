@@ -255,19 +255,18 @@ func TestOldAuthWays(t *testing.T) {
 		path, auth string
 		want       int
 	}{
-		{"/api/admin/client-logs", key, http.StatusNoContent},
-		{"/api/admin/client-logs?token=" + companiontest.AdminKey, "", http.StatusNoContent},
-		{"/api/admin/client-logs?token=wrong", "", http.StatusUnauthorized},
-		{"/api/admin/client-logs", "", http.StatusUnauthorized},
 		{"/api/core/client-logs", key, http.StatusNoContent},
+		{"/api/core/client-logs", "", http.StatusUnauthorized},
+		// The old admin UI's routes and its ?token= are gone.
+		{"/api/core/client-logs?token=" + companiontest.AdminKey, "", http.StatusUnauthorized},
+		{"/api/admin/client-logs", key, http.StatusNotFound},
 	} {
 		if got := call("POST", c.path, c.auth, logs); got != c.want {
 			t.Errorf("POST %s (auth %q): %d, want %d", c.path, c.auth, got, c.want)
 		}
 	}
-	// As before, the token in the URL is for the log ingest only.
 	if got := call("GET", "/api/core/overview?token="+companiontest.AdminKey, "", nil); got != http.StatusUnauthorized {
-		t.Errorf("?token= on another route: %d", got)
+		t.Errorf("?token= opened a route: %d", got)
 	}
 }
 

@@ -93,18 +93,6 @@ func (c *Core) isAdmin(r *http.Request) bool {
 	return false
 }
 
-// requireAdminOrToken also accepts ?token=<key>, as the pre-module companion
-// did for its client log ingest (navigator.sendBeacon sends no headers).
-func (c *Core) requireAdminOrToken() gin.HandlerFunc {
-	return func(g *gin.Context) {
-		if c.isAdmin(g.Request) || c.keyMatches(g.Query("token")) {
-			g.Next()
-			return
-		}
-		g.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"status": http.StatusUnauthorized, "message": "Authentication failed"})
-	}
-}
-
 func (c *Core) requireAdmin() gin.HandlerFunc {
 	return func(g *gin.Context) {
 		if c.isAdmin(g.Request) {
