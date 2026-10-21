@@ -64,3 +64,5 @@ web/ui-screenshots/
 # hpc apply: the generated compose file and the git sources it builds
 /compose.generated.yml
 /.hpc/
+__pycache__/
+*.pyc
