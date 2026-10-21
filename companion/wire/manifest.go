@@ -213,6 +213,9 @@ type LockedService struct {
 	Image  string `json:"image,omitempty"`  // with its digest
 	Commit string `json:"commit,omitempty"` // for git sources
 	URL    string `json:"url,omitempty"`    // where the core reaches it, when not the default
+	// User is the numeric uid:gid the container runs as; the core gives
+	// it the volume directory.
+	User string `json:"user,omitempty"`
 	// Manifest as the service reported it at apply time.
 	Manifest Manifest `json:"manifest"`
 	// Grants the operator confirmed.

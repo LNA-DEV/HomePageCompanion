@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -525,5 +526,90 @@ func TestServiceVolumeBackup(t *testing.T) {
 	}
 	if b, _ := os.ReadFile(filepath.Join(vol, "db", "state.json")); string(b) != `{"n":1}` {
 		t.Fatalf("restored volume: %s", b)
+	}
+}
+
+func TestEgressGrant(t *testing.T) {
+	grant := []string{"lemmy.world", "*.example.com", "api.other.org:8443", "10.0.0.5"}
+	for _, c := range []struct {
+		host, port string
+		want       bool
+	}{
+		{"lemmy.world", "443", true},
+		{"lemmy.world", "80", true},
+		{"lemmy.world", "22", false},
+		{"evil-lemmy.world", "443", false},
+		{"img.example.com", "443", true},
+		{"example.com", "443", false},
+		{"api.other.org", "8443", true},
+		{"api.other.org", "443", false},
+		{"10.0.0.5", "80", true},
+		{"10.0.0.6", "80", false},
+	} {
+		if got := core.EgressGranted(grant, c.host, c.port); got != c.want {
+			t.Errorf("%s:%s granted=%v, want %v", c.host, c.port, got, c.want)
+		}
+	}
+}
+
+// The egress proxy lets a service reach the hosts it was granted, and no
+// others; HTTPS goes through CONNECT.
+func TestEgressProxy(t *testing.T) {
+	t.Cleanup(core.AllowLoopbackEgress())
+	allowed := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { io.WriteString(w, "allowed "+r.URL.Path) }))
+	defer allowed.Close()
+	tlsAllowed := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { io.WriteString(w, "tls") }))
+	defer tlsAllowed.Close()
+	denied := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { t.Error("the denied host was reached") }))
+	defer denied.Close()
+	hostOf := func(u string) string { return strings.TrimPrefix(strings.TrimPrefix(u, "https://"), "http://") }
+
+	grants := wire.Grants{Egress: []string{hostOf(allowed.URL), hostOf(tlsAllowed.URL), "169.254.169.254"}, Volume: true}
+	cfg := strings.Replace(remoteConfig, "grants: { events: [t.ping/v1], public: true }",
+		fmt.Sprintf("grants: { egress: [%q, %q, 169.254.169.254] }", hostOf(allowed.URL), hostOf(tlsAllowed.URL)), 1)
+	rs := startRemote(t, grants, cfg)
+	waitRunning(t, rs.h, "remote:main", true)
+
+	client := func(user, pass string) *http.Client {
+		pu, _ := url.Parse("http://" + rs.addr)
+		if user != "" {
+			pu.User = url.UserPassword(user, pass)
+		}
+		tr := tlsAllowed.Client().Transport.(*http.Transport).Clone()
+		tr.Proxy = http.ProxyURL(pu)
+		return &http.Client{Transport: tr, Timeout: 10 * time.Second}
+	}
+	svc := client("remote", rs.token(t))
+	get := func(c *http.Client, u string) (int, string) {
+		resp, err := c.Get(u)
+		if err != nil {
+			return 0, err.Error()
+		}
+		defer resp.Body.Close()
+		b, _ := io.ReadAll(resp.Body)
+		return resp.StatusCode, string(b)
+	}
+	if code, body := get(svc, allowed.URL+"/x"); code != 200 || body != "allowed /x" {
+		t.Fatalf("granted host: %d %q", code, body)
+	}
+	if code, body := get(svc, tlsAllowed.URL); code != 200 || body != "tls" {
+		t.Fatalf("granted host over CONNECT: %d %q", code, body)
+	}
+	if code, body := get(svc, denied.URL); code != http.StatusForbidden || !strings.Contains(body, "not granted") {
+		t.Fatalf("host not granted: %d %q", code, body)
+	}
+	// The cloud's metadata service, even when granted by mistake.
+	if code, _ := get(svc, "http://169.254.169.254/latest/meta-data/"); code != http.StatusBadGateway {
+		t.Fatalf("link-local address: %d", code)
+	}
+	// Anyone else: no service, no way out.
+	for name, c := range map[string]*http.Client{"anonymous": client("", ""), "wrong token": client("remote", "nope"), "other name": client("t.consumer", rs.token(t))} {
+		if code, _ := get(c, allowed.URL); code != http.StatusProxyAuthRequired {
+			t.Errorf("%s: %d", name, code)
+		}
+	}
+	m := rs.h.Admin("GET", "/metrics", nil).Body.String()
+	if !strings.Contains(m, `companion_egress_requests_total{host="127.0.0.1",result="denied",service="remote"} 1`) {
+		t.Errorf("denied egress not counted:\n%s", m)
 	}
 }

@@ -11,3 +11,12 @@ func SetServiceIntervals(check, retry time.Duration) (restore func()) {
 	serviceCheckEvery, serviceRetryEvery = check, retry
 	return func() { serviceCheckEvery, serviceRetryEvery = c, r }
 }
+
+// EgressGranted is the egress grant check.
+var EgressGranted = egressGranted
+
+// AllowLoopbackEgress lets a test's local servers be egress targets.
+func AllowLoopbackEgress() (restore func()) {
+	egressAllowLoopback = true
+	return func() { egressAllowLoopback = false }
+}

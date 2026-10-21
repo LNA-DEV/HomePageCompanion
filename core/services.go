@@ -19,6 +19,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -210,6 +211,8 @@ type svcBlock struct {
 	problem    string
 	instErr    map[string]string
 	restarts   int
+	addrs      []net.IP // its container's addresses, for the egress proxy
+	addrsAt    time.Time
 	looping    bool
 	kick, stop chan struct{}
 	done       chan struct{}
@@ -580,7 +583,11 @@ func (m *serviceManager) instance(p *planned, resolve func(id string) *instance)
 	if b.locked == nil {
 		b.locked, b.grants, b.url = p.locked, grantsOf(p.service.Grants).Intersect(p.locked.Grants), serviceURL(b.id, p.service, p.locked)
 	}
+	volume := b.grants.Volume
 	b.mu.Unlock()
+	if volume {
+		m.prepareVolume(p.block, p.locked.User)
+	}
 	targets := map[string][]string{}
 	for _, sl := range p.info.Slots {
 		for _, id := range p.slots[sl.Name] {
@@ -757,11 +764,6 @@ func (m *serviceManager) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	http.NotFound(w, r)
-}
-
-// egress is the egress proxy (§5.8): no service has egress yet.
-func (m *serviceManager) egress(w http.ResponseWriter, r *http.Request) {
-	http.Error(w, "egress is not granted", http.StatusForbidden)
 }
 
 func apiError(w http.ResponseWriter, status int, code, msg string) {
@@ -1111,6 +1113,43 @@ func (m *serviceManager) gauges() {
 	}
 }
 
+// prepareVolume creates a service's volume directory and, where the
+// companion may (it runs as root in its container), hands it to the user
+// the service runs as, so a container that is not root can write to it.
+func (m *serviceManager) prepareVolume(id, user string) {
+	dir := m.volumeDir(id)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		m.c.log.Printf("services: %s: volume: %v", id, err)
+		return
+	}
+	uid, gid, ok := parseUser(user)
+	if !ok || os.Geteuid() != 0 {
+		return
+	}
+	filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
+		if err == nil {
+			os.Lchown(path, uid, gid)
+		}
+		return nil
+	})
+}
+
+// parseUser reads a numeric "uid:gid" (or "uid").
+func parseUser(s string) (uid, gid int, ok bool) {
+	u, g, found := strings.Cut(s, ":")
+	var err error
+	if uid, err = strconv.Atoi(u); err != nil || uid < 0 {
+		return 0, 0, false
+	}
+	gid = uid
+	if found {
+		if gid, err = strconv.Atoi(g); err != nil || gid < 0 {
+			return 0, 0, false
+		}
+	}
+	return uid, gid, true
+}
+
 // volumeDir is a service's volume on the companion's side.
 func (m *serviceManager) volumeDir(id string) string {
 	return filepath.Join(m.c.opts.DataDir, "services", id, "volume")
@@ -1163,7 +1202,19 @@ func (m *serviceManager) restoreVolume(ctx context.Context, name string, r io.Re
 	if !ok || id == "" || file == "" || strings.Contains(file, "..") {
 		return fmt.Errorf("restore: bad service file %s", name)
 	}
-	return writeFrom(r, filepath.Join(m.volumeDir(id), filepath.FromSlash(file)))
+	if err := writeFrom(r, filepath.Join(m.volumeDir(id), filepath.FromSlash(file))); err != nil {
+		return err
+	}
+	// Back to the service's user, as the volume was.
+	if b := m.get(id); b != nil {
+		b.mu.Lock()
+		locked := b.locked
+		b.mu.Unlock()
+		if locked != nil {
+			m.prepareVolume(id, locked.User)
+		}
+	}
+	return nil
 }
 
 // measured wraps a provider so that its calls count in /metrics, per
